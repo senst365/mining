@@ -479,12 +479,12 @@
 
         // --- 1. Firebase 初始化 ---
         const firebaseConfig = {
-            apiKey: "AIzaSyCEEBtqiL0csHov2qItM9VzRLwy32nG56c",
-            authDomain: "miningking-588af.firebaseapp.com",
-            projectId: "miningking-588af",
-            storageBucket: "miningking-588af.firebasestorage.app",
-            messagingSenderId: "205387369759",
-            appId: "1:205387369759:web:695a979dee2b347ef3742a"
+            apiKey: "AIzaSyDXf9rrPcQkJyqpn4LLW2k9BBDKQ9fYCQk",
+            authDomain: "mining-4d128.firebaseapp.com",
+            projectId: "mining-4d128",
+            storageBucket: "mining-4d128.firebasestorage.app",
+            messagingSenderId: "631718067635",
+            appId: "1:631718067635:web:66461919c8740299a71fc6"
         };
         
         let fbApp, auth, db, analytics;
@@ -583,10 +583,8 @@
             const optsHTML = sortedKeys.map(id => `<option value="${id}">${window.globalMissions[id].title}</option>`).join(''); sels.forEach(s => { if(s) s.innerHTML = optsHTML; });
             if(missionListUI) { sortedKeys.forEach(id => { const m = window.globalMissions[id]; const isAct = window.state.activeMissionId === id; const isCompleted = window.state.completedMissionIds && window.state.completedMissionIds.includes(id); let btnClass = `w-full text-left p-4 rounded-xl border-2 font-bold mb-2 transition-all `; if (isAct) btnClass += 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (isCompleted) btnClass += 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'; else btnClass += 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'; const btn = document.createElement('button'); btn.className = btnClass; btn.disabled = isCompleted; btn.innerHTML = `<div class="flex justify-between items-center"><span>${isCompleted ? '🏆 ' : ''}${m.title}</span> <span class="text-xs bg-white px-2 py-1 rounded border">${m.questions.length}題</span></div>`; if (!isCompleted) btn.onclick = () => { window.switchMission(id); window.toggleModal('mission-select-modal'); }; missionListUI.appendChild(btn); }); }
         };
-        window.updateMissionDropdowns();
 
         window.renderCharSelector = function() { const container = document.getElementById('char-selector'); if(!container) return; container.innerHTML = ''; config.clothesColors.forEach((c, i) => { const btn = document.createElement('button'); btn.className = `char-select-btn ${i === window.state.clothesIndex ? 'selected' : ''}`; btn.style.backgroundColor = '#' + c.color.toString(16).padStart(6, '0'); btn.onclick = () => { window.state.clothesIndex = i; window.selectCharColor(i); }; container.appendChild(btn); }); };
-        window.renderCharSelector();
 
         window.checkTeacherPassword = function() { document.getElementById('teacher-pwd-input').value = ''; window.toggleModal('teacher-login-modal'); };
         window.submitTeacherPassword = function() { const pwd = document.getElementById('teacher-pwd-input').value; if (pwd === 'tset') { window.toggleModal('teacher-login-modal'); window.toggleModal('settings-modal'); document.getElementById('system-menu-modal').classList.add('hidden'); } else { window.showToast("❌ 密碼錯誤！"); } };
@@ -625,50 +623,77 @@
 
         window.renderTeacherMissionList = function() { const list = document.getElementById('teacher-mission-list'); if(!list) return; list.innerHTML = ''; Object.entries(window.globalMissions).forEach(([id, m]) => { if(id.startsWith('mission_mul_')) return; list.innerHTML += `<div class="flex justify-between items-center p-4 bg-white rounded-xl border border-slate-200 shadow-sm"><div><div class="font-black text-slate-700">${m.title}</div><div class="text-xs text-slate-400">${m.questions.length} 題</div></div><button onclick="window.openDeleteConfirm('${id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold">刪除</button></div>`; }); }
 
-        async function saveProgress() { if (!window.state || !window.state.playerName || !db) return; const safeName = window.state.playerName.trim(); if(!safeName) return; try { await setDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'student_saves', safeName), { playerName: window.state.playerName, password: window.state.password, money: window.state.money, level: window.state.level, exp: window.state.exp, health: window.state.health, inventory: window.state.inventory, toolIndex: window.state.toolIndex, fishingToolIndex: window.state.fishingToolIndex, huntingToolIndex: window.state.huntingToolIndex, hatIndex: window.state.hatIndex, clothesIndex: window.state.clothesIndex, ownedHats: window.state.ownedHats, autoRead: window.state.autoRead, voiceURI: window.state.voiceURI, speechRate: window.state.speechRate, streak: window.state.streak, isDpadOnRight: window.state.isDpadOnRight, activeTool: window.state.activeTool, currentMap: window.state.currentMap, activeMissionId: window.state.activeMissionId || 'mission_mul_2', completedQuestions: window.state.completedQuestions || [], completedMissionIds: window.state.completedMissionIds || [] }); } catch(e) {} }
+        async function saveProgress() { 
+            if (!window.state || !window.state.playerName) return; 
+            const safeName = window.state.playerName.trim(); 
+            if(!safeName) return; 
+            
+            const saveData = { 
+                playerName: window.state.playerName, password: window.state.password, money: window.state.money, level: window.state.level, exp: window.state.exp, health: window.state.health, 
+                inventory: window.state.inventory, toolIndex: window.state.toolIndex, fishingToolIndex: window.state.fishingToolIndex, huntingToolIndex: window.state.huntingToolIndex, hatIndex: window.state.hatIndex, clothesIndex: window.state.clothesIndex, ownedHats: window.state.ownedHats, 
+                autoRead: window.state.autoRead, voiceURI: window.state.voiceURI, speechRate: window.state.speechRate, streak: window.state.streak, isDpadOnRight: window.state.isDpadOnRight, activeTool: window.state.activeTool, currentMap: window.state.currentMap, 
+                activeMissionId: window.state.activeMissionId || 'mission_mul_2', completedQuestions: window.state.completedQuestions || [], completedMissionIds: window.state.completedMissionIds || [] 
+            };
+
+            try { localStorage.setItem('mining_king_save_' + safeName, JSON.stringify(saveData)); } catch(e) { console.warn("本地存檔失敗", e); }
+
+            if (db) {
+                try { await setDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'student_saves', safeName), saveData); } catch(e) { console.warn("Firebase 儲存失敗", e); }
+            }
+        }
         window.saveProgress = saveProgress;
 
         async function loadStudentData(name, password) {
             if(!name) return false;
-            if (!db) {
-                window.state.playerName = name; window.state.password = password;
-                window.showToast(`歡迎, ${name}! (離線模式)`); window.renderCharSelector(); return true;
-            }
             const safeName = name.trim();
-            try {
-                const snap = await getDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'student_saves', safeName));
-                if (snap.exists()) {
-                    const data = snap.data();
-                    if (data.password && data.password !== password) { window.showToast("密碼錯誤！"); return false; }
-                    Object.assign(window.state, data);
-                    
-                    if (isNaN(window.state.money)) window.state.money = 0;
-                    if (isNaN(window.state.level) || window.state.level < 1) window.state.level = 1;
-                    if (isNaN(window.state.exp)) window.state.exp = 0;
-                    if (isNaN(window.state.health)) window.state.health = 100;
+            
+            let data = null;
+            let isCloud = false;
 
-                    window.state.password = password;
-                    window.updatePlayerName(data.playerName);
-                    if(data.clothesIndex !== undefined) window.selectCharColor(data.clothesIndex);
-                    window.updateHandedness(); window.updateUI();
-                    const vSelect = document.getElementById('voice-select'); if(vSelect) vSelect.value = window.state.voiceURI || '';
-                    const vRate = document.getElementById('voice-rate'); if(vRate) { vRate.value = window.state.speechRate || 1; document.getElementById('rate-value').innerText = vRate.value; }
-                    if(hatMesh) {
-                        const hInfo = config.hats[window.state.hatIndex];
-                        hatMesh.visible = (window.state.hatIndex > 0);
-                        if(hatMesh.visible && hInfo.color) hatMesh.material.color.setHex(hInfo.color);
-                    }
-                    window.updateToolVisuals();
-                    window.showToast(`歡迎回來, ${safeName}!`);
-                } else {
-                    window.state.playerName = safeName; window.state.password = password; window.showToast(`歡迎新同學, ${safeName}!`);
-                }
-                window.renderCharSelector(); return true;
-            } catch(e) { 
-                console.warn("無法連接雲端存檔，切換為單機模式:", e); 
-                window.state.playerName = safeName; window.state.password = password;
-                window.showToast(`歡迎新同學, ${safeName}! (單機模式)`); window.renderCharSelector(); return true; 
+            if (db) {
+                try {
+                    const snap = await getDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'student_saves', safeName));
+                    if (snap.exists()) { data = snap.data(); isCloud = true; }
+                } catch(e) { console.warn("Firebase 讀取失敗，嘗試尋找本地存檔..."); }
             }
+
+            if (!data) {
+                try {
+                    const localData = localStorage.getItem('mining_king_save_' + safeName);
+                    if (localData) { data = JSON.parse(localData); }
+                } catch (e) { console.warn("本地讀取失敗", e); }
+            }
+
+            if (data) {
+                if (data.password && data.password !== password) { window.showToast("密碼錯誤！"); return false; }
+                Object.assign(window.state, data);
+                
+                if (isNaN(window.state.money) || window.state.money == null) window.state.money = 0;
+                if (isNaN(window.state.level) || window.state.level == null || window.state.level < 1) window.state.level = 1;
+                if (isNaN(window.state.exp) || window.state.exp == null) window.state.exp = 0;
+                if (isNaN(window.state.health) || window.state.health == null) window.state.health = 100;
+
+                window.state.password = password;
+                window.updatePlayerName(data.playerName);
+                if(data.clothesIndex !== undefined) window.selectCharColor(data.clothesIndex);
+                window.updateHandedness(); window.updateUI();
+                const vSelect = document.getElementById('voice-select'); if(vSelect) vSelect.value = window.state.voiceURI || '';
+                const vRate = document.getElementById('voice-rate'); if(vRate) { vRate.value = window.state.speechRate || 1; document.getElementById('rate-value').innerText = vRate.value; }
+                if(hatMesh) {
+                    const hInfo = config.hats[window.state.hatIndex];
+                    hatMesh.visible = (window.state.hatIndex > 0);
+                    if(hatMesh.visible && hInfo.color) hatMesh.material.color.setHex(hInfo.color);
+                }
+                window.updateToolVisuals();
+                
+                window.showToast(`歡迎回來, ${safeName}! ${isCloud ? '(雲端連線中)' : '(單機紀錄)'}`);
+            } else {
+                window.state.playerName = safeName;
+                window.state.password = password;
+                window.showToast(`歡迎新同學, ${safeName}!`);
+            }
+            window.renderCharSelector();
+            return true;
         }
         window.loadStudentData = loadStudentData;
 
@@ -1078,7 +1103,7 @@
                  window.state.money -= item.cost; window.state.inventory.headlamp = 1; 
                  window.updateUI(); window.changeShopTab('tools'); window.saveProgress(); 
                  window.showToast("已購買高流明頭燈！"); 
-                 if(window.state.currentMap === 'cave') window.loadMap('cave'); // Reload lighting
+                 if(window.state.currentMap === 'cave') window.loadMap('cave'); 
              } else { window.showToast("金錢不足！"); } 
         };
         
@@ -1089,7 +1114,7 @@
                  window.state.money -= item.cost; window.state.inventory.floodlight = 1; 
                  window.updateUI(); window.changeShopTab('tools'); window.saveProgress(); 
                  window.showToast("已購買大範圍照明燈！地底將如白晝般明亮！"); 
-                 if(window.state.currentMap === 'cave') window.loadMap('cave'); // Reload lighting
+                 if(window.state.currentMap === 'cave') window.loadMap('cave'); 
              } else { window.showToast("金錢不足！"); } 
         };
 
@@ -1104,10 +1129,8 @@
                 const hat = config.hats[window.state.hatIndex]; const speedMultiplier = 1 + (hat.effect ? hat.effect.speed : 0); const finalSpeed = config.moveSpeed * speedMultiplier;
                 const nextPos = playerGroup.position.clone().add(moveDir.multiplyScalar(finalSpeed));
                 
-                // Map Boundaries Check
-                const limit = config.mapRadius - 100; // Small buffer
+                const limit = config.mapRadius - 100; 
                 if (Math.abs(nextPos.x) > limit || Math.abs(nextPos.z) > limit) {
-                    // Hit boundary, stop movement
                     return;
                 }
 
@@ -1145,7 +1168,7 @@
                 if (obj.userData.active) {
                     const dx = px - obj.position.x;
                     const dz = pz - obj.position.z;
-                    if (dx*dx + dz*dz < 1225.0) { // Interaction distance up to 35
+                    if (dx*dx + dz*dz < 1225.0) { 
                         found = true; window.state.currentObject = obj;
                         break;
                     }
@@ -1193,7 +1216,6 @@
         window.goHome = function() { document.getElementById('blocker').style.display = 'flex'; document.getElementById('system-menu-modal').classList.add('hidden'); document.getElementById('modal-container').classList.add('hidden'); };
         
         window.switchTool = () => {
-            // Cycle: Pickaxe -> Fishing -> Hunting -> Pickaxe
             if (window.state.activeTool === 'pickaxe') {
                 if (window.state.fishingToolIndex > 0) { window.state.activeTool = 'fishing_rod'; window.showToast("已裝備：魚竿 (耗體: 10)"); } 
                 else if (window.state.huntingToolIndex > 0) { window.state.activeTool = 'hunting'; window.showToast(`已裝備：${config.huntingTools[window.state.huntingToolIndex].name} (耗體: 15)`); }
@@ -1215,7 +1237,7 @@
             window.state.shopTab = tab; document.querySelectorAll('.shop-tab-btn').forEach(b => b.classList.remove('active')); const eT = document.getElementById('tab-' + tab); if(eT) eT.classList.add('active'); const cont = document.getElementById('shop-content'); if(!cont) return; cont.innerHTML = '';
             if (tab === 'recycle') {
                 cont.innerHTML = `<button onclick="window.sellAll()" class="w-full bg-green-500 text-white p-5 rounded-2xl font-black mb-4 shadow-md text-slate-800">💰 全部賣出</button>`;
-                for (let k in config.oreTypes) { if (window.state.inventory[k] > 0) { const info = config.oreTypes[k]; cont.innerHTML += `<div class="flex justify-between items-center p-4 bg-white rounded-3xl border mb-2 text-slate-800"><span class="font-bold text-lg text-slate-800">${info.icon} ${info.name} (x${window.state.inventory[k]})</span><button onclick="window.sellOne('${k}')" class="bg-blue-500 text-white px-4 py-2 rounded-xl font-bold">賣 1 ($${info.value})</button></div>`; } }
+                for (let k in config.oreTypes) { if (window.state.inventory[k] > 0) { const info = config.oreTypes[k]; cont.innerHTML += `<div class="flex justify-between items-center p-4 bg-white rounded-3xl border mb-2 text-slate-800"><span class="font-bold text-lg text-slate-800">${info.icon} ${info.name} (x${window.state.inventory[k]})</span><button onclick="window.sellOne('${k}')" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold">賣 1 ($${info.value})</button></div>`; } }
             } else if (tab === 'tools') {
                 cont.innerHTML += `<div class="shop-sub-title">⛏️ 採礦工具</div>`;
                 config.miningTools.forEach((t, i) => { cont.innerHTML += `<button onclick="window.buyTool(${i})" class="w-full flex justify-between p-5 bg-white rounded-2xl border-4 mb-2 font-black text-slate-800 ${window.state.toolIndex === i ? 'border-blue-500' : 'border-slate-50'}"><span>${t.name}</span> <span class="text-blue-600">${window.state.toolIndex >= i ? '已持有' : '$'+t.cost}</span><br><span class="text-xs text-gray-500">${t.desc}</span></button>`; });
@@ -1271,7 +1293,7 @@
             
             if (['monster', 'ore', 'field', 'fish', 'special_fish', 'rabbit', 'deer', 'boar', 'bear', 'mole'].includes(typeToRespawn) || (typeToRespawn === 'animal')) {
                 if (typeToRespawn === 'special_fish') respawnObject(Math.random() > 0.5 ? 'special_fish' : 'fish', currentMap);
-                else if (typeToRespawn === 'animal') respawnObject(u.animalType, currentMap); // Respawn specific animal
+                else if (typeToRespawn === 'animal') respawnObject(u.animalType, currentMap); 
                 else respawnObject(typeToRespawn, currentMap);
             }
             
@@ -1368,7 +1390,35 @@
         window.sellOne = (k) => { if (window.state.inventory[k] > 0) { window.state.inventory[k]--; window.state.money += config.oreTypes[k].value; window.updateUI(); window.changeShopTab('recycle'); window.saveProgress(); } };
         window.setKey = (code, active, btn) => { window.keys[code] = active; if (active) btn.classList.add('active-state'); else btn.classList.remove('active-state'); };
 
-        if(auth) { onAuthStateChanged(auth, async (user) => { if (user && window.state) { window.state.userId = user.uid; await loadGlobalMissions(); initScene(); window.updateUI(); } else if (!user) { try { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); else throw new Error("No token"); } catch (e) { console.log("Custom token failed (expected if using custom firebase config), trying anonymous:", e); await signInAnonymously(auth); } } }); } else { loadGlobalMissions(); initScene(); window.updateUI(); }
+        if(auth) { 
+            onAuthStateChanged(auth, async (user) => { 
+                if (user && window.state) { 
+                    window.state.userId = user.uid; 
+                    await loadGlobalMissions(); 
+                    initScene(); 
+                    window.updateUI(); 
+                } else if (!user) { 
+                    try { 
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token); 
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (e) { 
+                        console.warn("Firebase 登入失敗 (可能未啟用匿名登入)，自動切換至單機模式:", e); 
+                        window.state.userId = 'local_user_' + Math.random().toString(36).substr(2, 9);
+                        await loadGlobalMissions(); 
+                        initScene(); 
+                        window.updateUI();
+                    } 
+                } 
+            }); 
+        } else { 
+            window.state.userId = 'local_user_' + Math.random().toString(36).substr(2, 9);
+            loadGlobalMissions(); 
+            initScene(); 
+            window.updateUI(); 
+        }
         window.addEventListener('keydown', e => window.keys[e.code] = true); window.addEventListener('keyup', e => window.keys[e.code] = false); window.addEventListener('keydown', e => { if(e.code === 'KeyK' || e.code === 'k') window.tryInteract(); }); window.addEventListener('resize', window.onWindowResize);
         window.renderCharSelector();
     </script>
