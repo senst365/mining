@@ -118,7 +118,7 @@
             </div>
 
             <div class="flex flex-col gap-4 text-slate-800">
-                <button id="btn-start-game" onclick="window.startGame()" class="w-full bg-blue-500 text-white py-4 rounded-[2rem] text-2xl font-black shadow-[0_8px_0_#1d4ed8] active:translate-y-1 active:shadow-none transition-all hover:bg-blue-600">🚀 開始冒險</button>
+                <button onclick="window.startGame()" class="w-full bg-blue-500 text-white py-4 rounded-[2rem] text-2xl font-black shadow-[0_8px_0_#1d4ed8] active:translate-y-1 active:shadow-none transition-all hover:bg-blue-600">🚀 開始冒險</button>
                 <div class="flex gap-4">
                      <button onclick="window.toggleModal('student-settings-modal')" class="flex-1 bg-slate-100 text-slate-600 py-3 rounded-[2rem] text-lg font-bold shadow-[0_4px_0_#cbd5e1] active:translate-y-1 active:shadow-none transition-all">⚙️ 學生設定</button>
                      <button onclick="window.checkTeacherPassword()" class="flex-1 bg-slate-200 text-slate-600 py-3 rounded-[2rem] text-lg font-bold shadow-[0_4px_0_#94a3b8] active:translate-y-1 active:shadow-none transition-all">👨‍🏫 老師專區</button>
@@ -441,17 +441,37 @@
         import { getFirestore, doc, getDoc, setDoc, deleteField, updateDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-        // --- 0. 宣告全域 3D 物件 ---
+        // --- 0. 宣告全域 3D 物件 & 快取 ---
         let scene = null, camera = null, renderer = null, clock = null;
         let playerGroup = null, visualGroup = null, pickaxeMesh = null, hatMesh = null, bodyMesh = null;
         let fishingRodMesh = null, fishingNetMesh = null, boatMesh = null;
-        // Hunting Tools Meshes
         let huntingSlingshotMesh = null, huntingBowMesh = null, huntingRifleMesh = null;
-        
         let leftLeg = null, rightLeg = null, leftArm = null, rightArm = null;
         let objects = [], collidables = [], bridges = [];
         let isInitialized = false;
         let playerLight = null;
+
+        // --- Geometry & Material Cache (For massive performance boost) ---
+        const gCache = {};
+        const mCache = {};
+        function getBoxGeo(w, h, d) { const k=`box_${Number(w).toFixed(2)}_${Number(h).toFixed(2)}_${Number(d).toFixed(2)}`; if(!gCache[k]) gCache[k] = new THREE.BoxGeometry(w,h,d); return gCache[k]; }
+        function getSphereGeo(r) { const k=`sphere_${Number(r).toFixed(2)}`; if(!gCache[k]) gCache[k] = new THREE.SphereGeometry(r, 16, 16); return gCache[k]; }
+        function getCylGeo(rt, rb, h, rs) { const k=`cyl_${rt}_${rb}_${h}_${rs}`; if(!gCache[k]) gCache[k] = new THREE.CylinderGeometry(rt,rb,h,rs); return gCache[k]; }
+        function getConeGeo(r, h, rs) { const k=`cone_${r}_${h}_${rs}`; if(!gCache[k]) gCache[k] = new THREE.ConeGeometry(r,h,rs); return gCache[k]; }
+        function getGeo(name, c) { if(!gCache[name]) gCache[name] = c(); return gCache[name]; }
+        function getMat(k, c) { if(!mCache[k]) mCache[k] = c(); return mCache[k]; }
+        function createBox(w, h, d, mat) { return new THREE.Mesh(getBoxGeo(w, h, d), mat); }
+        
+        function freezeObj(obj) {
+            obj.matrixAutoUpdate = false;
+            obj.updateMatrix();
+            if(obj.children) {
+                obj.traverse(c => {
+                    c.matrixAutoUpdate = false;
+                    c.updateMatrix();
+                });
+            }
+        }
 
         const npcQuotes = [
             "加油！你一定行的！", "今天的努力是為了明天的收穫！", "數學其實很有趣喔！", "慢慢來，不要急，你正在進步！", "哇！你的裝備真帥氣！", "多算幾題，腦袋會變聰明！", "記得要看清楚題目喔！", "休息一下，喝口水再繼續吧！", "不要放棄，答案就在眼前！", "你是最棒的冒險家！", "我相信你可以挑戰成功的！", "失敗沒關係，那是成功的養分！", "你的潛力無限大！", "保持好奇心，世界會更寬廣！", "每天進步一點點，一年就很驚人喔！", "遇到困難深呼吸，你可以解決的！", "學習是最好的寶藏！", "專注當下，你就在發光！", "別忘了給自己一個微笑！", "勇氣不是不害怕，而是面對害怕！"
@@ -459,12 +479,12 @@
 
         // --- 1. Firebase 初始化 ---
         const firebaseConfig = {
-            apiKey: "AIzaSyDXf9rrPcQkJyqpn4LLW2k9BBDKQ9fYCQk",
-            authDomain: "mining-4d128.firebaseapp.com",
-            projectId: "mining-4d128",
-            storageBucket: "mining-4d128.firebasestorage.app",
-            messagingSenderId: "631718067635",
-            appId: "1:631718067635:web:66461919c8740299a71fc6"
+            apiKey: "AIzaSyCEEBtqiL0csHov2qItM9VzRLwy32nG56c",
+            authDomain: "miningking-588af.firebaseapp.com",
+            projectId: "miningking-588af",
+            storageBucket: "miningking-588af.firebasestorage.app",
+            messagingSenderId: "205387369759",
+            appId: "1:205387369759:web:695a979dee2b347ef3742a"
         };
         
         let fbApp, auth, db, analytics;
@@ -531,9 +551,9 @@
         window.keys = {};
 
         const config = {
-            pScale: 4.5, playerScale: 7.5, monsterScale: 12.0, playerHitbox: 5.0, // Monster Scale Increased
-            moveSpeed: 3.0, rotationSpeed: 0.25, riverRange: { min: -1600, max: -800 },
-            mapRadius: 30000, // Expanded Map
+            pScale: 4.5, playerScale: 7.5, monsterScale: 12.0, playerHitbox: 5.0, 
+            moveSpeed: 4.5, rotationSpeed: 0.35, riverRange: { min: -1600, max: -800 },
+            mapRadius: 30000, 
             maps: { island: { name: '陽光島嶼', minLevel: 1 }, cave: { name: '幽暗地底', minLevel: 10 } },
             oreTypes: {
                 'stone': { name: '普通石頭', color: 0x94a3b8, value: 20, icon: '🪨', exp: 20 }, 'iron': { name: '閃亮鐵礦', color: 0xcbd5e1, value: 100, icon: '⚙️', exp: 60 }, 'gold': { name: '純淨金礦', color: 0xfacc15, value: 500, icon: '🪙', exp: 200 }, 'ruby': { name: '紅寶石', color: 0xef4444, value: 2000, icon: '🛑', exp: 500 }, 'diamond': { name: '傳說鑽石', color: 0x22d3ee, value: 8000, icon: '💎', exp: 1200 }, 'pearl': { name: '深海珍珠', color: 0xffffff, value: 15000, icon: '🔮', exp: 3000 }, 'chest': { name: '神秘寶箱', color: 0x8b5cf6, value: 30000, icon: '🎁', exp: 6000 }, 'fish': { name: '新鮮漁獲', color: 0x0ea5e9, value: 300, icon: '🐟', exp: 150 }, 'crab': { name: '帝王蟹', color: 0xff4500, value: 2000, icon: '🦀', exp: 400 }, 'lobster': { name: '大龍蝦', color: 0xff0000, value: 3500, icon: '🦞', exp: 600 }, 'shark': { name: '傳說鯊魚', color: 0x708090, value: 8000, icon: '🦈', exp: 1500 },
@@ -551,11 +571,22 @@
             fishingTools: [ { name: "空手捕魚", cost: 0, icon: '🖐️' }, { name: "魚竿", cost: 1500, icon: '🎣' }, { name: "漁網", cost: 12000, icon: '🕸️' } ],
             huntingTools: [ { name: "空手", cost: 0, icon: '🖐️' }, { name: "彈弓", cost: 5000, icon: '🏹', desc: "可捕捉兔子/鼴鼠" }, { name: "獵弓", cost: 25000, icon: '🏹', desc: "可捕捉鹿" }, { name: "獵槍", cost: 80000, icon: '🔫', desc: "可捕捉熊與野豬" } ],
             clothesColors: [ { name: "經典藍", color: 0x3b82f6 }, { name: "狂暴紅", color: 0xef4444 }, { name: "暗影黑", color: 0x111111 }, { name: "森林綠", color: 0x16a34a }, { name: "閃亮黃", color: 0xeab308 } ],
-            hats: [ { name: "不戴帽子", cost: 0, color: null, effect: { speed: 0, stamina: 0 }, desc: "無效果" }, { name: "採礦安全帽", cost: 5000, color: 0xfacc15, effect: { speed: 0, stamina: -2 }, desc: "體力消耗 -2" }, { name: "傳奇牛仔帽", cost: 20000, color: 0x78350f, effect: { speed: 0.2, stamina: 0 }, desc: "移動速度 +20%" }, { name: "至尊王冠", cost: 300000, color: 0xfde047, effect: { speed: 0.6, stamina: -5 }, desc: "速度+60%, 體力消耗-5" } ],
+            hats: [ { name: "不戴帽子", cost: 0, color: null, effect: { speed: 0, stamina: 0 }, desc: "無效果" }, { name: "採礦安全帽", cost: 5000, color: 0xfacc15, effect: { speed: 0, stamina: -2 }, desc: "體力消耗 -2" }, { name: "傳奇牛仔帽", cost: 20000, color: 0x78350f, effect: { speed: 0.4, stamina: 0 }, desc: "移動速度 +40%" }, { name: "至尊王冠", cost: 300000, color: 0xfde047, effect: { speed: 0.8, stamina: -5 }, desc: "速度+80%, 體力消耗-5" } ],
             supplies: { 'chocolate': { name: '巧克力棒', heal: 20, cost: 200, icon: '🍫' }, 'energy_drink': { name: '提神飲料', heal: 40, cost: 500, icon: '🥤' }, 'boat': { name: '渡河小船', heal: 0, cost: 5000, icon: '🛶' }, 'meal': { name: '黃金全餐', heal: 80, cost: 1200, icon: '🍱' }, 'steak': { name: '厚切牛排', heal: 100, cost: 2500, icon: '🥩' } },
             specialItems: { 'headlamp': { name: '高流明頭燈', cost: 15000, icon: '🔦', range: 1500 }, 'floodlight': { name: '大範圍照明燈', cost: 60000, icon: '💡', range: 4000 } },
             costs: { mining: 10, fishing: 10, monster: 30, field: 5, hunt: 15 }
         };
+
+        window.updateMissionDropdowns = function() {
+            const sels = [document.getElementById('login-mission-select')]; const missionListUI = document.getElementById('mission-list-ui'); if(missionListUI) missionListUI.innerHTML = '';
+            const sortedKeys = Object.keys(window.globalMissions).sort((a, b) => { const isAmul = a.startsWith('mission_mul_'); const isBmul = b.startsWith('mission_mul_'); if (isAmul && isBmul) return parseInt(a.split('_')[2]) - parseInt(b.split('_')[2]); if (isAmul) return -1; if (isBmul) return 1; return 0; });
+            const optsHTML = sortedKeys.map(id => `<option value="${id}">${window.globalMissions[id].title}</option>`).join(''); sels.forEach(s => { if(s) s.innerHTML = optsHTML; });
+            if(missionListUI) { sortedKeys.forEach(id => { const m = window.globalMissions[id]; const isAct = window.state.activeMissionId === id; const isCompleted = window.state.completedMissionIds && window.state.completedMissionIds.includes(id); let btnClass = `w-full text-left p-4 rounded-xl border-2 font-bold mb-2 transition-all `; if (isAct) btnClass += 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (isCompleted) btnClass += 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'; else btnClass += 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'; const btn = document.createElement('button'); btn.className = btnClass; btn.disabled = isCompleted; btn.innerHTML = `<div class="flex justify-between items-center"><span>${isCompleted ? '🏆 ' : ''}${m.title}</span> <span class="text-xs bg-white px-2 py-1 rounded border">${m.questions.length}題</span></div>`; if (!isCompleted) btn.onclick = () => { window.switchMission(id); window.toggleModal('mission-select-modal'); }; missionListUI.appendChild(btn); }); }
+        };
+        window.updateMissionDropdowns();
+
+        window.renderCharSelector = function() { const container = document.getElementById('char-selector'); if(!container) return; container.innerHTML = ''; config.clothesColors.forEach((c, i) => { const btn = document.createElement('button'); btn.className = `char-select-btn ${i === window.state.clothesIndex ? 'selected' : ''}`; btn.style.backgroundColor = '#' + c.color.toString(16).padStart(6, '0'); btn.onclick = () => { window.state.clothesIndex = i; window.selectCharColor(i); }; container.appendChild(btn); }); };
+        window.renderCharSelector();
 
         window.checkTeacherPassword = function() { document.getElementById('teacher-pwd-input').value = ''; window.toggleModal('teacher-login-modal'); };
         window.submitTeacherPassword = function() { const pwd = document.getElementById('teacher-pwd-input').value; if (pwd === 'tset') { window.toggleModal('teacher-login-modal'); window.toggleModal('settings-modal'); document.getElementById('system-menu-modal').classList.add('hidden'); } else { window.showToast("❌ 密碼錯誤！"); } };
@@ -565,10 +596,8 @@
                 let missions = generateMathMissions();
                 if (db) { try { const snap = await getDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'global_missions', 'master')); if (snap.exists()) { const data = snap.data(); missions = { ...missions, ...data.missions }; } } catch (err) { console.warn("僅使用內建題庫。"); } }
                 window.globalMissions = missions;
-            } catch(e) { window.globalMissions = generateMathMissions(); } finally { updateMissionDropdowns(); renderTeacherMissionList(); }
+            } catch(e) { window.globalMissions = generateMathMissions(); } finally { window.updateMissionDropdowns(); window.renderTeacherMissionList(); }
         }
-        
-        // Explicitly attach to window to prevent ReferenceError in inline events
         window.loadGlobalMissions = loadGlobalMissions;
 
         async function uploadMission() {
@@ -585,25 +614,16 @@
             });
             if(questions.length === 0) { window.showToast("無效的題目格式"); return; }
             const missionId = 'mission_custom_' + Date.now(); const newMission = { title, questions }; window.globalMissions[missionId] = newMission;
-            try { await setDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'global_missions', 'master'), { missions: { [missionId]: newMission } }, { merge: true }); window.showToast("任務發布成功！"); document.getElementById('new-mission-title').value = ''; document.getElementById('import-area').value = ''; updateMissionDropdowns(); renderTeacherMissionList(); } catch(e) { window.showToast("上傳失敗"); }
+            try { await setDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'global_missions', 'master'), { missions: { [missionId]: newMission } }, { merge: true }); window.showToast("任務發布成功！"); document.getElementById('new-mission-title').value = ''; document.getElementById('import-area').value = ''; window.updateMissionDropdowns(); window.renderTeacherMissionList(); } catch(e) { window.showToast("上傳失敗"); }
         }
         window.uploadMission = uploadMission;
 
         window.openDeleteConfirm = function(id) { if(id.startsWith('mission_mul_')) { window.showToast("內建任務無法刪除"); return; } window.state.pendingDeleteId = id; window.toggleModal('delete-mission-modal'); }
         window.closeDeleteConfirm = function() { window.state.pendingDeleteId = null; document.getElementById('delete-mission-modal').classList.add('hidden'); if(document.querySelectorAll('.modal-mask:not(.hidden)').length === 0) document.getElementById('modal-container').classList.add('hidden'); }
-        window.confirmDeleteMission = async function() { const id = window.state.pendingDeleteId; if (!id) return; window.closeDeleteConfirm(); if (window.state.activeMissionId === id) { window.state.activeMissionId = 'mission_mul_2'; window.state.completedQuestions = []; window.state.missionProgress = 0; window.updateUI(); window.showToast("切換回預設任務"); } delete window.globalMissions[id]; renderTeacherMissionList(); updateMissionDropdowns(); if (db) { try { await updateDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'global_missions', 'master'), { [`missions.${id}`]: deleteField() }); } catch(e) {} } }
+        window.confirmDeleteMission = async function() { const id = window.state.pendingDeleteId; if (!id) return; window.closeDeleteConfirm(); if (window.state.activeMissionId === id) { window.state.activeMissionId = 'mission_mul_2'; window.state.completedQuestions = []; window.state.missionProgress = 0; window.updateUI(); window.showToast("切換回預設任務"); } delete window.globalMissions[id]; window.renderTeacherMissionList(); window.updateMissionDropdowns(); if (db) { try { await updateDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'global_missions', 'master'), { [`missions.${id}`]: deleteField() }); } catch(e) {} } }
         window.openSystemMenu = () => { window.toggleModal('system-menu-modal'); }
-        
-        function updateMissionDropdowns() {
-            const sels = [document.getElementById('login-mission-select')]; const missionListUI = document.getElementById('mission-list-ui'); if(missionListUI) missionListUI.innerHTML = '';
-            const sortedKeys = Object.keys(window.globalMissions).sort((a, b) => { const isAmul = a.startsWith('mission_mul_'); const isBmul = b.startsWith('mission_mul_'); if (isAmul && isBmul) return parseInt(a.split('_')[2]) - parseInt(b.split('_')[2]); if (isAmul) return -1; if (isBmul) return 1; return 0; });
-            const optsHTML = sortedKeys.map(id => `<option value="${id}">${window.globalMissions[id].title}</option>`).join(''); sels.forEach(s => { if(s) s.innerHTML = optsHTML; });
-            if(missionListUI) { sortedKeys.forEach(id => { const m = window.globalMissions[id]; const isAct = window.state.activeMissionId === id; const isCompleted = window.state.completedMissionIds && window.state.completedMissionIds.includes(id); let btnClass = `w-full text-left p-4 rounded-xl border-2 font-bold mb-2 transition-all `; if (isAct) btnClass += 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (isCompleted) btnClass += 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'; else btnClass += 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'; const btn = document.createElement('button'); btn.className = btnClass; btn.disabled = isCompleted; btn.innerHTML = `<div class="flex justify-between items-center"><span>${isCompleted ? '🏆 ' : ''}${m.title}</span> <span class="text-xs bg-white px-2 py-1 rounded border">${m.questions.length}題</span></div>`; if (!isCompleted) btn.onclick = () => { window.switchMission(id); window.toggleModal('mission-select-modal'); }; missionListUI.appendChild(btn); }); }
-        }
-        window.updateMissionDropdowns = updateMissionDropdowns;
 
-        function renderTeacherMissionList() { const list = document.getElementById('teacher-mission-list'); if(!list) return; list.innerHTML = ''; Object.entries(window.globalMissions).forEach(([id, m]) => { if(id.startsWith('mission_mul_')) return; list.innerHTML += `<div class="flex justify-between items-center p-4 bg-white rounded-xl border border-slate-200 shadow-sm"><div><div class="font-black text-slate-700">${m.title}</div><div class="text-xs text-slate-400">${m.questions.length} 題</div></div><button onclick="window.openDeleteConfirm('${id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold">刪除</button></div>`; }); }
-        window.renderTeacherMissionList = renderTeacherMissionList;
+        window.renderTeacherMissionList = function() { const list = document.getElementById('teacher-mission-list'); if(!list) return; list.innerHTML = ''; Object.entries(window.globalMissions).forEach(([id, m]) => { if(id.startsWith('mission_mul_')) return; list.innerHTML += `<div class="flex justify-between items-center p-4 bg-white rounded-xl border border-slate-200 shadow-sm"><div><div class="font-black text-slate-700">${m.title}</div><div class="text-xs text-slate-400">${m.questions.length} 題</div></div><button onclick="window.openDeleteConfirm('${id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg font-bold">刪除</button></div>`; }); }
 
         async function saveProgress() { if (!window.state || !window.state.playerName || !db) return; const safeName = window.state.playerName.trim(); if(!safeName) return; try { await setDoc(doc(window.fb_db, 'artifacts', appId, 'public', 'data', 'student_saves', safeName), { playerName: window.state.playerName, password: window.state.password, money: window.state.money, level: window.state.level, exp: window.state.exp, health: window.state.health, inventory: window.state.inventory, toolIndex: window.state.toolIndex, fishingToolIndex: window.state.fishingToolIndex, huntingToolIndex: window.state.huntingToolIndex, hatIndex: window.state.hatIndex, clothesIndex: window.state.clothesIndex, ownedHats: window.state.ownedHats, autoRead: window.state.autoRead, voiceURI: window.state.voiceURI, speechRate: window.state.speechRate, streak: window.state.streak, isDpadOnRight: window.state.isDpadOnRight, activeTool: window.state.activeTool, currentMap: window.state.currentMap, activeMissionId: window.state.activeMissionId || 'mission_mul_2', completedQuestions: window.state.completedQuestions || [], completedMissionIds: window.state.completedMissionIds || [] }); } catch(e) {} }
         window.saveProgress = saveProgress;
@@ -611,11 +631,8 @@
         async function loadStudentData(name, password) {
             if(!name) return false;
             if (!db) {
-                window.state.playerName = name;
-                window.state.password = password;
-                window.showToast(`歡迎, ${name}! (離線模式)`);
-                window.renderCharSelector();
-                return true;
+                window.state.playerName = name; window.state.password = password;
+                window.showToast(`歡迎, ${name}! (離線模式)`); window.renderCharSelector(); return true;
             }
             const safeName = name.trim();
             try {
@@ -644,13 +661,14 @@
                     window.updateToolVisuals();
                     window.showToast(`歡迎回來, ${safeName}!`);
                 } else {
-                    window.state.playerName = safeName;
-                    window.state.password = password;
-                    window.showToast(`歡迎新同學, ${safeName}!`);
+                    window.state.playerName = safeName; window.state.password = password; window.showToast(`歡迎新同學, ${safeName}!`);
                 }
-                window.renderCharSelector();
-                return true;
-            } catch(e) { console.error("Load error:", e); return false; }
+                window.renderCharSelector(); return true;
+            } catch(e) { 
+                console.warn("無法連接雲端存檔，切換為單機模式:", e); 
+                window.state.playerName = safeName; window.state.password = password;
+                window.showToast(`歡迎新同學, ${safeName}! (單機模式)`); window.renderCharSelector(); return true; 
+            }
         }
         window.loadStudentData = loadStudentData;
 
@@ -660,16 +678,22 @@
         window.updatePlayerName = function(name) { window.state.playerName = name || "玩家"; const el = document.getElementById('ui-player-name'); if(el) el.innerText = window.state.playerName; };
         window.updateHandedness = function() { if (window.state.isDpadOnRight) document.body.classList.add('dpad-right'); else document.body.classList.remove('dpad-right'); const setInput = document.getElementById('set-dpad-right'); if(setInput) setInput.checked = window.state.isDpadOnRight; };
         window.selectCharColor = function(idx) { window.state.clothesIndex = idx; document.querySelectorAll('.char-select-btn').forEach((b, i) => { if (i === idx) b.classList.add('selected'); else b.classList.remove('selected'); }); if (bodyMesh) bodyMesh.material.color.setHex(config.clothesColors[idx].color); };
-        window.renderCharSelector = function() { const container = document.getElementById('char-selector'); if(!container) return; container.innerHTML = ''; config.clothesColors.forEach((c, i) => { const btn = document.createElement('button'); btn.className = `char-select-btn ${i === window.state.clothesIndex ? 'selected' : ''}`; btn.style.backgroundColor = '#' + c.color.toString(16).padStart(6, '0'); btn.onclick = () => { window.state.clothesIndex = i; window.selectCharColor(i); }; container.appendChild(btn); }); };
         window.switchMission = function(id) { if (!window.globalMissions[id]) id = 'mission_mul_2'; window.state.activeMissionId = id; window.state.completedQuestions = []; window.state.missionProgress = 0; window.updateUI(); window.showToast(`已切換任務：${window.globalMissions[id].title}`); };
 
         window.updateUI = function() {
+            if (isNaN(window.state.money) || window.state.money == null) window.state.money = 0;
+            if (isNaN(window.state.level) || window.state.level == null || window.state.level < 1) window.state.level = 1;
+            if (isNaN(window.state.exp) || window.state.exp == null) window.state.exp = 0;
+            if (isNaN(window.state.health) || window.state.health == null) window.state.health = 100;
+            for (let k in config.oreTypes) { if (isNaN(window.state.inventory[k]) || window.state.inventory[k] == null) window.state.inventory[k] = 0; }
+            for (let k in config.supplies) { if (isNaN(window.state.inventory[k]) || window.state.inventory[k] == null) window.state.inventory[k] = 0; }
+            for (let k of ['headlamp', 'floodlight']) { if (isNaN(window.state.inventory[k]) || window.state.inventory[k] == null) window.state.inventory[k] = 0; }
+
             const elMoney = document.getElementById('stat-money'); if(elMoney) elMoney.innerText = window.state.money;
             const elShopMoney = document.getElementById('shop-money'); if(elShopMoney) elShopMoney.innerText = window.state.money;
             const elHealthVal = document.getElementById('health-val'); if(elHealthVal) elHealthVal.innerText = window.state.health;
             const elHealthFill = document.getElementById('health-fill'); if(elHealthFill) elHealthFill.style.width = window.state.health + '%';
             
-            // Level and Exp UI
             const elLevelText = document.getElementById('level-text');
             if(elLevelText) {
                 const maxExp = window.state.level * 5000;
@@ -725,156 +749,156 @@
 
         function createCharacterModel(color = 0x3b82f6, isMonster = false, scaleOverride = null) {
             const group = new THREE.Group(); const s = scaleOverride || config.pScale;
-            // Simplified color selection
-            let skin = 0xffdbac;
-            let clothes = color;
-            
+            let skin = 0xffdbac; let clothes = color;
             if (isMonster) {
-                if (window.state.currentMap === 'cave') {
-                     skin = 0xcc0000; clothes = 0x990000; // Red for Cave
-                } else {
-                     skin = 0x111111; clothes = 0x000000; // Black for Island
-                }
+                if (window.state.currentMap === 'cave') { skin = 0xcc0000; clothes = 0x990000; } // Cave: Red
+                else { skin = 0x111111; clothes = 0x000000; } // Island: Black
             }
 
-            // Reuse Geometries for character parts if possible or create new
-            // Since animations modify rotation, we can reuse geometry but not the mesh itself easily without cloning
-            // But we can cache the geometry
+            const matC = getMat(`cloth_${clothes}`, () => new THREE.MeshStandardMaterial({ color: clothes }));
+            const matS = getMat(`skin_${skin}`, () => new THREE.MeshStandardMaterial({ color: skin }));
             
-            // Reusing geometry here is complex due to structure differences, 
-            // but we can reuse materials
-            
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8 * s, 1.2 * s, 0.4 * s), new THREE.MeshStandardMaterial({ color: clothes })); body.position.y = 1.1 * s; group.add(body);
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.65 * s, 0.65 * s, 0.65 * s), new THREE.MeshStandardMaterial({ color: skin })); head.position.y = 2.05 * s; group.add(head);
-            
+            const body = createBox(0.8 * s, 1.2 * s, 0.4 * s, matC); body.position.y = 1.1 * s; group.add(body);
+            const head = createBox(0.65 * s, 0.65 * s, 0.65 * s, matS); head.position.y = 2.05 * s; group.add(head);
             if (isMonster) {
-                const eMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity: 2.0 });
-                const le = new THREE.Mesh(new THREE.BoxGeometry(0.22 * s, 0.08 * s, 0.1 * s), eMat); le.position.set(-0.18 * s, 2.15 * s, 0.35 * s); head.add(le);
-                const re = new THREE.Mesh(new THREE.BoxGeometry(0.22 * s, 0.08 * s, 0.1 * s), eMat); re.position.set(0.18 * s, 2.15 * s, 0.35 * s); head.add(re);
+                const eMat = getMat('monsterEye', () => new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity: 2.0 }));
+                const le = createBox(0.22 * s, 0.08 * s, 0.1 * s, eMat); le.position.set(-0.18 * s, 2.15 * s, 0.35 * s); head.add(le);
+                const re = createBox(0.22 * s, 0.08 * s, 0.1 * s, eMat); re.position.set(0.18 * s, 2.15 * s, 0.35 * s); head.add(re);
             }
-
-            const la = new THREE.Mesh(new THREE.BoxGeometry(0.3 * s, 1.0 * s, 0.3 * s), new THREE.MeshStandardMaterial({ color: skin })); la.position.set(-0.55 * s, 1.2 * s, 0); group.add(la);
-            const ra = new THREE.Mesh(new THREE.BoxGeometry(0.3 * s, 1.0 * s, 0.3 * s), new THREE.MeshStandardMaterial({ color: skin })); ra.position.set(0.55 * s, 1.2 * s, 0); group.add(ra);
-            const ll = new THREE.Mesh(new THREE.BoxGeometry(0.35 * s, 0.75 * s, 0.35 * s), new THREE.MeshStandardMaterial({ color: isMonster ? 0x222222 : 0x1e293b })); ll.position.set(-0.25 * s, 0.35 * s, 0); group.add(ll);
-            const rl = new THREE.Mesh(new THREE.BoxGeometry(0.35 * s, 0.75 * s, 0.35 * s), new THREE.MeshStandardMaterial({ color: isMonster ? 0x222222 : 0x1e293b })); rl.position.set(0.25 * s, 0.35 * s, 0); group.add(rl);
-            
+            const la = createBox(0.3 * s, 1.0 * s, 0.3 * s, matS); la.position.set(-0.55 * s, 1.2 * s, 0); group.add(la);
+            const ra = createBox(0.3 * s, 1.0 * s, 0.3 * s, matS); ra.position.set(0.55 * s, 1.2 * s, 0); group.add(ra);
+            const llColor = isMonster ? (window.state.currentMap==='cave'?0x660000:0x222222) : 0x1e293b;
+            const matL = getMat(`leg_${llColor}`, () => new THREE.MeshStandardMaterial({ color: llColor }));
+            const ll = createBox(0.35 * s, 0.75 * s, 0.35 * s, matL); ll.position.set(-0.25 * s, 0.35 * s, 0); group.add(ll);
+            const rl = createBox(0.35 * s, 0.75 * s, 0.35 * s, matL); rl.position.set(0.25 * s, 0.35 * s, 0); group.add(rl);
             return { group, head, body, la, ra, ll, rl };
         }
 
         function createMountain(x, z, scale = 1) {
             const finalScale = scale * 10; 
-            const geo = new THREE.ConeGeometry(40 * finalScale, 60 * finalScale, 5); 
-            const mat = new THREE.MeshStandardMaterial({ color: 0x64748b, flatShading: true });
-            const m = new THREE.Mesh(geo, mat);
+            const mat = getMat('mountain', () => new THREE.MeshStandardMaterial({ color: 0x64748b, flatShading: true }));
+            const m = new THREE.Mesh(getConeGeo(40, 60, 5), mat);
+            m.scale.set(finalScale, finalScale, finalScale);
             m.position.set(x, 30 * finalScale, z);
             m.castShadow = true; m.receiveShadow = true;
             scene.add(m); collidables.push(m);
             m.userData = { type: 'mountain', radius: 35 * finalScale, active: true };
+            freezeObj(m);
         }
 
         function createNPC(x, z) {
             const model = createCharacterModel(0x94a3b8, false, 6.5); const npc = model.group; npc.position.set(x, 0, z);
-            const icon = new THREE.Mesh(new THREE.CircleGeometry(2.5, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })); icon.position.y = 22; icon.lookAt(x, 1000, z + 100); 
-            const ind = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfacc15 })); ind.position.y = 22; npc.add(ind);
+            const iconMat = getMat('npcIcon', () => new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+            const icon = new THREE.Mesh(getGeo('circle', () => new THREE.CircleGeometry(2.5, 32)), iconMat); icon.position.y = 22; icon.lookAt(x, 1000, z + 100); 
+            const indMat = getMat('npcInd', () => new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+            const ind = new THREE.Mesh(getSphereGeo(1.5), indMat); ind.position.y = 22; npc.add(ind);
             npc.rotation.y = Math.random() * Math.PI * 2; scene.add(npc); objects.push(npc); collidables.push(npc); npc.userData = { type: 'npc', radius: 8.0, active: true };
+            freezeObj(npc);
         }
         
         function createAnimal(type, x, z) {
             const def = config.animalTypes[type];
             const g = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.8 });
+            const mat = getMat(`anim_${type}`, () => new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.8 }));
             
             if (type === 'rabbit') {
-                const body = new THREE.Mesh(new THREE.BoxGeometry(3, 2.5, 4), mat); body.position.y = 1.25; g.add(body);
-                const head = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2.5), mat); head.position.set(0, 3, 1.5); g.add(head);
-                const ears = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 0.5), mat); ears.position.set(0, 5, 1); g.add(ears);
+                const body = createBox(3, 2.5, 4, mat); body.position.y = 1.25; g.add(body);
+                const head = createBox(2, 2, 2.5, mat); head.position.set(0, 3, 1.5); g.add(head);
+                const matPink = getMat('pink', () => new THREE.MeshStandardMaterial({color: 0xffcccc}));
+                const ear1 = createBox(0.5, 2.5, 0.5, matPink); ear1.position.set(-0.6, 4.2, 2); g.add(ear1);
+                const ear2 = createBox(0.5, 2.5, 0.5, matPink); ear2.position.set(0.6, 4.2, 2); g.add(ear2);
             } else if (type === 'deer') {
-                const body = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 7), mat); body.position.y = 4; g.add(body);
-                const neck = new THREE.Mesh(new THREE.BoxGeometry(1.5, 4, 1.5), mat); neck.position.set(0, 7, 3); g.add(neck);
-                const head = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 3), mat); head.position.set(0, 9, 4); g.add(head);
-                const leg1 = new THREE.Mesh(new THREE.BoxGeometry(1, 4, 1), mat); leg1.position.set(-1.5, 2, 2.5); g.add(leg1);
-                const leg2 = new THREE.Mesh(new THREE.BoxGeometry(1, 4, 1), mat); leg2.position.set(1.5, 2, 2.5); g.add(leg2);
-                const leg3 = new THREE.Mesh(new THREE.BoxGeometry(1, 4, 1), mat); leg3.position.set(-1.5, 2, -2.5); g.add(leg3);
-                const leg4 = new THREE.Mesh(new THREE.BoxGeometry(1, 4, 1), mat); leg4.position.set(1.5, 2, -2.5); g.add(leg4);
-                const a = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 0.5), new THREE.MeshStandardMaterial({color: 0x5d4037})); a.position.set(0, 11, 4); g.add(a);
+                const body = createBox(4, 4, 7, mat); body.position.y = 4; g.add(body);
+                const neck = createBox(1.5, 4, 1.5, mat); neck.position.set(0, 7, 3); neck.rotation.x = -Math.PI/6; g.add(neck);
+                const head = createBox(2, 2.5, 3.5, mat); head.position.set(0, 9, 4.5); g.add(head);
+                const leg1 = createBox(0.8, 5, 0.8, mat); leg1.position.set(-1.2, 2.5, 2.5); g.add(leg1);
+                const leg2 = createBox(0.8, 5, 0.8, mat); leg2.position.set(1.2, 2.5, 2.5); g.add(leg2);
+                const leg3 = createBox(0.8, 5, 0.8, mat); leg3.position.set(-1.2, 2.5, -2.5); g.add(leg3);
+                const leg4 = createBox(0.8, 5, 0.8, mat); leg4.position.set(1.2, 2.5, -2.5); g.add(leg4);
+                const antlerMat = getMat('antler', () => new THREE.MeshStandardMaterial({color: 0x5d4037}));
+                const a1 = new THREE.Mesh(getCylGeo(0.2, 0.2, 3, 8), antlerMat); a1.position.set(-0.8, 11, 4); a1.rotation.z = Math.PI/6; g.add(a1);
+                const a2 = new THREE.Mesh(getCylGeo(0.2, 0.2, 3, 8), antlerMat); a2.position.set(0.8, 11, 4); a2.rotation.z = -Math.PI/6; g.add(a2);
             } else if (type === 'boar') {
-                const body = new THREE.Mesh(new THREE.BoxGeometry(4.5, 4, 7), mat); body.position.y = 3; g.add(body);
-                const head = new THREE.Mesh(new THREE.BoxGeometry(3.5, 3.5, 4), mat); head.position.set(0, 3.5, 4.5); g.add(head);
-                const tusks = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 1), new THREE.MeshStandardMaterial({color: 0xffffff})); tusks.position.set(0, 2.5, 6.5); g.add(tusks);
+                const body = createBox(4.5, 4, 7, mat); body.position.y = 3; g.add(body);
+                const head = new THREE.Mesh(getConeGeo(1, 1, 8), mat); head.scale.set(3, 4.5, 4); head.position.set(0, 3.5, 5.5); head.rotation.x = Math.PI/2; head.rotation.y = Math.PI/4; g.add(head);
+                const leg1 = createBox(1.2, 2.5, 1.2, mat); leg1.position.set(-1.8, 1.2, 2.5); g.add(leg1);
+                const leg2 = createBox(1.2, 2.5, 1.2, mat); leg2.position.set(1.8, 1.2, 2.5); g.add(leg2);
+                const leg3 = createBox(1.2, 2.5, 1.2, mat); leg3.position.set(-1.8, 1.2, -2.5); g.add(leg3);
+                const leg4 = createBox(1.2, 2.5, 1.2, mat); leg4.position.set(1.8, 1.2, -2.5); g.add(leg4);
+                const tuskMat = getMat('tusk', () => new THREE.MeshStandardMaterial({color: 0xffffff}));
+                const t1 = new THREE.Mesh(getConeGeo(0.3, 1.5, 8), tuskMat); t1.position.set(-1, 2.5, 6.5); t1.rotation.x = Math.PI/4; g.add(t1);
+                const t2 = new THREE.Mesh(getConeGeo(0.3, 1.5, 8), tuskMat); t2.position.set(1, 2.5, 6.5); t2.rotation.x = Math.PI/4; g.add(t2);
             } else if (type === 'bear') {
-                const body = new THREE.Mesh(new THREE.BoxGeometry(6, 6, 9), mat); body.position.y = 5; g.add(body);
-                const head = new THREE.Mesh(new THREE.BoxGeometry(4.5, 4.5, 5), mat); head.position.set(0, 7, 5.5); g.add(head);
-                const leg1 = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), mat); leg1.position.set(-2, 2, 3); g.add(leg1);
-                const leg2 = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), mat); leg2.position.set(2, 2, 3); g.add(leg2);
-                const leg3 = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), mat); leg3.position.set(-2, 2, -3); g.add(leg3);
-                const leg4 = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), mat); leg4.position.set(2, 2, -3); g.add(leg4);
+                const body = createBox(6, 6, 9, mat); body.position.y = 5; g.add(body);
+                const head = createBox(4.5, 4.5, 5, mat); head.position.set(0, 7, 5.5); g.add(head);
+                const e1 = new THREE.Mesh(getCylGeo(1, 1, 0.5, 8), mat); e1.position.set(-1.8, 9.2, 5); e1.rotation.x = Math.PI/2; g.add(e1);
+                const e2 = new THREE.Mesh(getCylGeo(1, 1, 0.5, 8), mat); e2.position.set(1.8, 9.2, 5); e2.rotation.x = Math.PI/2; g.add(e2);
+                const leg1 = createBox(2, 4, 2, mat); leg1.position.set(-2.5, 2, 3); g.add(leg1);
+                const leg2 = createBox(2, 4, 2, mat); leg2.position.set(2.5, 2, 3); g.add(leg2);
+                const leg3 = createBox(2, 4, 2, mat); leg3.position.set(-2.5, 2, -3); g.add(leg3);
+                const leg4 = createBox(2, 4, 2, mat); leg4.position.set(2.5, 2, -3); g.add(leg4);
             } else if (type === 'mole') {
-                const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 4, 8), mat);
-                body.rotation.z = Math.PI / 2; body.position.y = 1; g.add(body);
-                const head = new THREE.Mesh(new THREE.ConeGeometry(1.4, 2, 8), mat);
-                head.rotation.z = -Math.PI / 2; head.position.set(2.5, 1, 0); g.add(head);
-                const nose = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshStandardMaterial({color: 0xffaaaa}));
-                nose.position.set(3.5, 1, 0); g.add(nose);
-                const claw1 = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1), new THREE.MeshStandardMaterial({color: 0xffaaaa})); claw1.position.set(1.5, 0, 1.5); g.add(claw1);
-                const claw2 = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1), new THREE.MeshStandardMaterial({color: 0xffaaaa})); claw2.position.set(1.5, 0, -1.5); g.add(claw2);
+                const body = new THREE.Mesh(getCylGeo(1.5, 2, 4, 8), mat); body.rotation.z = Math.PI / 2; body.position.y = 1; g.add(body);
+                const head = new THREE.Mesh(getConeGeo(1.4, 2, 8), mat); head.rotation.z = -Math.PI / 2; head.position.set(2.5, 1, 0); g.add(head);
+                const matPink = getMat('pink', () => new THREE.MeshStandardMaterial({color: 0xffcccc}));
+                const nose = new THREE.Mesh(getSphereGeo(0.5), matPink); nose.position.set(3.5, 1, 0); g.add(nose);
+                const claw1 = createBox(1, 0.5, 1, matPink); claw1.position.set(1.5, 0, 1.5); g.add(claw1);
+                const claw2 = createBox(1, 0.5, 1, matPink); claw2.position.set(1.5, 0, -1.5); g.add(claw2);
             }
             
             g.position.set(x, 0, z); g.rotation.y = Math.random() * Math.PI * 2; 
             const s = 2.5; g.scale.set(s, s, s); 
             g.castShadow = true;
             g.userData = { type: 'animal', animalType: type, radius: def.radius * 1.5, active: true };
-            scene.add(g); objects.push(g); collidables.push(g); return g;
+            scene.add(g); objects.push(g); collidables.push(g); 
+            freezeObj(g);
+            return g;
         }
 
         function createPlayer() {
             const s = config.playerScale; const model = createCharacterModel(config.clothesColors[window.state.clothesIndex].color, false, s);
             playerGroup = new THREE.Group(); visualGroup = model.group; bodyMesh = model.body;
             leftArm = model.la; rightArm = model.ra; leftLeg = model.ll; rightLeg = model.rl;
-            hatMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.4 * s, 0.6 * s, 0.3 * s, 12), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
+            hatMesh = new THREE.Mesh(getCylGeo(0.4 * s, 0.6 * s, 0.3 * s, 12), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
             hatMesh.position.y = 0.45 * s; hatMesh.visible = false; model.head.add(hatMesh);
-            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.1 * s, 1.4 * s, 0.1 * s), new THREE.MeshStandardMaterial({ color: 0x451a03 }));
-            pickaxeMesh = new THREE.Mesh(new THREE.BoxGeometry(1.2 * s, 0.15 * s, 0.15 * s), new THREE.MeshStandardMaterial({ color: config.miningTools[window.state.toolIndex].color }));
+            const handle = createBox(0.1 * s, 1.4 * s, 0.1 * s, new THREE.MeshStandardMaterial({ color: 0x451a03 }));
+            pickaxeMesh = createBox(1.2 * s, 0.15 * s, 0.15 * s, new THREE.MeshStandardMaterial({ color: config.miningTools[window.state.toolIndex].color }));
             const pAnchor = new THREE.Group(); pAnchor.add(handle); pickaxeMesh.position.y = 0.65 * s; pAnchor.add(pickaxeMesh);
             pAnchor.position.set(0, -0.4 * s, 0.3 * s); pAnchor.rotation.x = Math.PI / 4; rightArm.add(pAnchor);
 
-            const rodHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.08 * s, 2.5 * s), new THREE.MeshStandardMaterial({ color: 0x8b4513 }));
+            const rodHandle = new THREE.Mesh(getCylGeo(0.05 * s, 0.08 * s, 2.5 * s, 8), new THREE.MeshStandardMaterial({ color: 0x8b4513 }));
             rodHandle.position.y = 1.0 * s; 
             fishingRodMesh = new THREE.Group(); fishingRodMesh.add(rodHandle);
-            const string = new THREE.Mesh(new THREE.CylinderGeometry(0.01 * s, 0.01 * s, 1.0 * s), new THREE.MeshBasicMaterial({color: 0xffffff})); string.position.set(0, 2.2 * s, 0.5 * s); string.rotation.x = Math.PI / 4;
+            const string = new THREE.Mesh(getCylGeo(0.01 * s, 0.01 * s, 1.0 * s, 8), new THREE.MeshBasicMaterial({color: 0xffffff})); string.position.set(0, 2.2 * s, 0.5 * s); string.rotation.x = Math.PI / 4;
             fishingRodMesh.add(string); fishingRodMesh.position.set(0, -0.4 * s, 0.3 * s); fishingRodMesh.rotation.x = Math.PI / 6; rightArm.add(fishingRodMesh); fishingRodMesh.visible = false;
 
             fishingNetMesh = new THREE.Group();
-            const netHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.08 * s, 0.08 * s, 2.0 * s), new THREE.MeshStandardMaterial({color: 0x5c4033}));
+            const netHandle = new THREE.Mesh(getCylGeo(0.08 * s, 0.08 * s, 2.0 * s, 8), new THREE.MeshStandardMaterial({color: 0x5c4033}));
             const netRing = new THREE.Mesh(new THREE.TorusGeometry(0.6 * s, 0.05 * s, 8, 16), new THREE.MeshStandardMaterial({color: 0x94a3b8})); netRing.position.y = 1.0 * s;
-            const netBag = new THREE.Mesh(new THREE.ConeGeometry(0.6 * s, 1.2 * s, 16, 1, true), new THREE.MeshStandardMaterial({color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide})); netBag.position.y = 1.0 * s; netBag.rotation.x = Math.PI;
+            const netBag = new THREE.Mesh(getConeGeo(0.6 * s, 1.2 * s, 16), new THREE.MeshStandardMaterial({color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide})); netBag.position.y = 1.0 * s; netBag.rotation.x = Math.PI;
             fishingNetMesh.add(netHandle); fishingNetMesh.add(netRing); fishingNetMesh.add(netBag); fishingNetMesh.position.set(0, -0.4 * s, 0.5 * s); fishingNetMesh.rotation.x = -Math.PI / 6; rightArm.add(fishingNetMesh); fishingNetMesh.visible = false;
             
             // Hunting Tools
-            // 1. Slingshot
             huntingSlingshotMesh = new THREE.Group();
-            const slHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.05 * s, 1.0 * s), new THREE.MeshStandardMaterial({color: 0x8d6e63}));
-            const slForkL = new THREE.Mesh(new THREE.CylinderGeometry(0.03 * s, 0.03 * s, 0.6 * s), new THREE.MeshStandardMaterial({color: 0x8d6e63})); slForkL.position.set(-0.2*s, 0.6*s, 0); slForkL.rotation.z = Math.PI/6;
-            const slForkR = new THREE.Mesh(new THREE.CylinderGeometry(0.03 * s, 0.03 * s, 0.6 * s), new THREE.MeshStandardMaterial({color: 0x8d6e63})); slForkR.position.set(0.2*s, 0.6*s, 0); slForkR.rotation.z = -Math.PI/6;
+            const slHandle = new THREE.Mesh(getCylGeo(0.05 * s, 0.05 * s, 1.0 * s, 8), new THREE.MeshStandardMaterial({color: 0x8d6e63}));
+            const slForkL = new THREE.Mesh(getCylGeo(0.03 * s, 0.03 * s, 0.6 * s, 8), new THREE.MeshStandardMaterial({color: 0x8d6e63})); slForkL.position.set(-0.2*s, 0.6*s, 0); slForkL.rotation.z = Math.PI/6;
+            const slForkR = new THREE.Mesh(getCylGeo(0.03 * s, 0.03 * s, 0.6 * s, 8), new THREE.MeshStandardMaterial({color: 0x8d6e63})); slForkR.position.set(0.2*s, 0.6*s, 0); slForkR.rotation.z = -Math.PI/6;
             huntingSlingshotMesh.add(slHandle); huntingSlingshotMesh.add(slForkL); huntingSlingshotMesh.add(slForkR);
             huntingSlingshotMesh.position.set(0, -0.4 * s, 0.3 * s); huntingSlingshotMesh.rotation.x = Math.PI / 2; rightArm.add(huntingSlingshotMesh); huntingSlingshotMesh.visible = false;
 
-            // 2. Bow
             huntingBowMesh = new THREE.Group();
             const bowArc = new THREE.Mesh(new THREE.TorusGeometry(1.2 * s, 0.05 * s, 8, 16, Math.PI), new THREE.MeshStandardMaterial({color: 0x5d4037})); bowArc.rotation.z = -Math.PI/2;
-            const bowString = new THREE.Mesh(new THREE.CylinderGeometry(0.01 * s, 0.01 * s, 2.4 * s), new THREE.MeshBasicMaterial({color: 0xffffff}));
+            const bowString = new THREE.Mesh(getCylGeo(0.01 * s, 0.01 * s, 2.4 * s, 8), new THREE.MeshBasicMaterial({color: 0xffffff}));
             huntingBowMesh.add(bowArc); huntingBowMesh.add(bowString);
             huntingBowMesh.position.set(0, -0.4 * s, 0.3 * s); huntingBowMesh.rotation.y = -Math.PI / 2; rightArm.add(huntingBowMesh); huntingBowMesh.visible = false;
 
-            // 3. Rifle
             huntingRifleMesh = new THREE.Group();
-            const rStock = new THREE.Mesh(new THREE.BoxGeometry(0.2 * s, 0.4 * s, 1.0 * s), new THREE.MeshStandardMaterial({color: 0x3e2723}));
-            const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.05 * s, 2.5 * s), new THREE.MeshStandardMaterial({color: 0x222222})); rBarrel.rotation.x = Math.PI/2; rBarrel.position.z = 1.0*s; rBarrel.position.y = 0.1*s;
+            const rStock = createBox(0.2 * s, 0.4 * s, 1.0 * s, new THREE.MeshStandardMaterial({color: 0x3e2723}));
+            const rBarrel = new THREE.Mesh(getCylGeo(0.05 * s, 0.05 * s, 2.5 * s, 8), new THREE.MeshStandardMaterial({color: 0x222222})); rBarrel.rotation.x = Math.PI/2; rBarrel.position.z = 1.0*s; rBarrel.position.y = 0.1*s;
             huntingRifleMesh.add(rStock); huntingRifleMesh.add(rBarrel);
             huntingRifleMesh.position.set(0, -0.4 * s, 0.3 * s); rightArm.add(huntingRifleMesh); huntingRifleMesh.visible = false;
 
-            const boatGeo = new THREE.BoxGeometry(1.2 * s, 0.5 * s, 1.2 * s);
-            const boatMat = new THREE.MeshStandardMaterial({ color: 0x6F4E37 });
-            boatMesh = new THREE.Mesh(boatGeo, boatMat);
+            boatMesh = createBox(1.2 * s, 0.5 * s, 1.2 * s, new THREE.MeshStandardMaterial({ color: 0x6F4E37 }));
             boatMesh.position.y = 0.25 * s;
             boatMesh.visible = false;
             playerGroup.add(boatMesh);
@@ -884,70 +908,137 @@
         }
 
         function createNature() {
-            const river = new THREE.Mesh(new THREE.PlaneGeometry(800, 60000), new THREE.MeshStandardMaterial({ color: 0x0077be, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 })); 
+            const riverMat = getMat('river', () => new THREE.MeshStandardMaterial({ color: 0x0077be, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }));
+            const river = new THREE.Mesh(getGeo('riverGeo', () => new THREE.PlaneGeometry(800, 60000)), riverMat); 
             river.rotation.x = -Math.PI / 2; river.position.set(-1200, 2.0, 0); scene.add(river);
-            for(let z = -25000; z <= 25000; z+= 2500) { const b = new THREE.Mesh(new THREE.BoxGeometry(850, 5, 150), new THREE.MeshStandardMaterial({ color: 0x78350f })); b.position.set(-1200, 3, z); b.receiveShadow = true; scene.add(b); bridges.push({ x: -1200, z: z, width: 850, depth: 150 }); }
-            for (let i = 0; i < 20000; i++) { const x = (Math.random() - 0.5) * 58000; const z = (Math.random() - 0.5) * 58000; if(Math.abs(x + 1200) < 450) continue; const trunk = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 15, 8), new THREE.MeshStandardMaterial({ color: 0x5d4037 })); trunk.position.y = 7.5; const leaves = new THREE.Mesh(new THREE.ConeGeometry(15, 35, 8), new THREE.MeshStandardMaterial({ color: 0x15803d })); leaves.position.y = 30; const g = new THREE.Group(); g.add(trunk); g.add(leaves); g.position.set(x, 0, z); const s = 1.5 + Math.random() * 1.5; g.scale.set(s,s,s); scene.add(g); g.userData = { type: 'tree', radius: 4 * s, active: true }; collidables.push(g); }
+            
+            const bMat = getMat('bridge', () => new THREE.MeshStandardMaterial({ color: 0x78350f }));
+            for(let z = -25000; z <= 25000; z+= 2500) { const b = createBox(850, 5, 150, bMat); b.position.set(-1200, 3, z); b.receiveShadow = true; scene.add(b); bridges.push({ x: -1200, z: z, width: 850, depth: 150 }); freezeObj(b); }
+            
+            const trunkMat = getMat('trunk', () => new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+            const leafMat = getMat('leaf', () => new THREE.MeshStandardMaterial({ color: 0x15803d }));
+            for (let i = 0; i < 20000; i++) { 
+                const x = (Math.random() - 0.5) * 58000; const z = (Math.random() - 0.5) * 58000; if(Math.abs(x + 1200) < 450) continue; 
+                const trunk = new THREE.Mesh(getCylGeo(4, 4, 15, 8), trunkMat); trunk.position.y = 7.5; 
+                const leaves = new THREE.Mesh(getConeGeo(15, 35, 8), leafMat); leaves.position.y = 30; 
+                const g = new THREE.Group(); g.add(trunk); g.add(leaves); g.position.set(x, 0, z); const s = 1.5 + Math.random() * 1.5; g.scale.set(s,s,s); scene.add(g); 
+                g.userData = { type: 'tree', radius: 4 * s, active: true }; collidables.push(g);
+                freezeObj(g);
+            }
         }
         
         function respawnObject(type, mapType = 'island') {
-            let attempts = 0; const maxAttempts = 50; const range = (mapType === 'cave') ? 20000 : 55000; 
+            let attempts = 0; const maxAttempts = 100; const range = (mapType === 'cave') ? 20000 : 55000; 
             while(attempts < maxAttempts) {
                 attempts++; let x, z;
                 if (type === 'fish' || type === 'special_fish') { z = (Math.random() - 0.5) * 58000; x = -1200 + (Math.random() - 0.5) * 700; } 
                 else { x = (Math.random() - 0.5) * range; z = (Math.random() - 0.5) * range; }
                 if (mapType === 'cave' && Math.abs(x) < 200 && Math.abs(z) < 200) continue;
                 if (mapType === 'island' && !['fish','special_fish'].includes(type) && x > config.riverRange.min && x < config.riverRange.max) continue;
-                const pos = new THREE.Vector3(x, 0, z); if (pos.distanceTo(playerGroup.position) < 100) continue;
-                let hitWall = false; for(let c of collidables) { if(pos.distanceTo(c.position) < (c.userData.radius + 15)) { hitWall = true; break; } } if(hitWall) continue;
+                
+                // Fish bridge collision check
+                if (type === 'fish' || type === 'special_fish') {
+                    let underBridge = false;
+                    for (let i=0; i<bridges.length; i++) { if (Math.abs(z - bridges[i].z) < 100) { underBridge = true; break; } }
+                    if (underBridge) continue;
+                }
+
+                // Avoid player
+                const px = playerGroup.position.x, pz = playerGroup.position.z;
+                if ((x-px)*(x-px) + (z-pz)*(z-pz) < 10000) continue;
+                
+                // Tight collision check
+                let hitWall = false; 
+                for(let i=0, len=collidables.length; i<len; i++) { 
+                    const c = collidables[i];
+                    const dx = x - c.position.x; const dz = z - c.position.z;
+                    const r = c.userData.radius + 2; 
+                    if(dx*dx + dz*dz < r*r) { hitWall = true; break; } 
+                } 
+                if(hitWall) continue;
                 
                 let mesh;
-                if (type === 'monster') { mesh = createCharacterModel(0x000000, true, config.monsterScale).group; mesh.userData = { type: 'monster', radius: 12.0, active: true }; }
-                else if (type === 'field') { mesh = new THREE.Mesh(new THREE.BoxGeometry(25, 0.5, 25), new THREE.MeshStandardMaterial({ color: 0x854d0e })); mesh.userData = { type: 'field', radius: 6.0, active: true }; mesh.position.y = 0.2; }
-                else if (type === 'ore') { const keys = Object.keys(config.oreTypes).filter(k=>!['chest','fish','pearl','crab','lobster','shark','rabbit','deer','boar','bear','mole'].includes(k)); const o = keys[Math.floor(Math.random() * keys.length)]; mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(5.0), new THREE.MeshStandardMaterial({ color: config.oreTypes[o].color, metalness: 0.7 })); mesh.userData = { type: 'ore', ore: o, radius: 4.0, active: true }; mesh.position.y = 4.5; }
-                else if (['fish','special_fish'].includes(type)) { const fishModel = new THREE.Group(); const color = type === 'special_fish' ? 0xffd700 : 0x0ea5e9; const fbody = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 2), new THREE.MeshStandardMaterial({ color: color, metalness: 0.8 })); fishModel.add(fbody); const ftail = new THREE.Mesh(new THREE.ConeGeometry(2, 4, 3), new THREE.MeshStandardMaterial({ color: type === 'special_fish' ? 0xffa500 : 0x0284c7 })); ftail.position.x = -4; ftail.rotation.z = Math.PI / 2; fishModel.add(ftail); mesh = fishModel; mesh.userData = { type: type, radius: 5.0, active: true }; mesh.position.y = 1.5; }
-                else if (['rabbit','deer','boar','bear','mole'].includes(type)) { mesh = createAnimal(type, x, z); }
+                if (type === 'monster') { mesh = createCharacterModel(0x000000, true, config.monsterScale).group; mesh.userData = { type: 'monster', radius: 10.0, active: true }; }
+                else if (type === 'field') { 
+                    const mat = getMat('field', () => new THREE.MeshStandardMaterial({ color: 0x854d0e }));
+                    mesh = createBox(25, 0.5, 25, mat); mesh.userData = { type: 'field', radius: 6.0, active: true }; mesh.position.y = 0.2; 
+                }
+                else if (type === 'ore') { 
+                    const keys = Object.keys(config.oreTypes).filter(k=>!['chest','fish','pearl','crab','lobster','shark','rabbit','deer','boar','bear','mole'].includes(k)); 
+                    const o = keys[Math.floor(Math.random() * keys.length)]; 
+                    const mat = getMat(`ore_${o}`, () => new THREE.MeshStandardMaterial({ color: config.oreTypes[o].color, metalness: 0.7 }));
+                    const geo = getGeo('oreGeo', () => new THREE.DodecahedronGeometry(5.0));
+                    mesh = new THREE.Mesh(geo, mat); mesh.userData = { type: 'ore', ore: o, radius: 4.0, active: true }; mesh.position.y = 4.5; 
+                }
+                else if (['fish','special_fish'].includes(type)) { 
+                    const fishModel = new THREE.Group(); 
+                    const color = type === 'special_fish' ? 0xffd700 : 0x0ea5e9; 
+                    const tailColor = type === 'special_fish' ? 0xffa500 : 0x0284c7; 
+                    const bMat = getMat(`fb_${type}`, () => new THREE.MeshStandardMaterial({ color: color, metalness: 0.8 }));
+                    const tMat = getMat(`ft_${type}`, () => new THREE.MeshStandardMaterial({ color: tailColor }));
+                    const fbody = createBox(6, 3, 2, bMat); fishModel.add(fbody); 
+                    const ftail = new THREE.Mesh(getConeGeo(2, 4, 3), tMat); ftail.position.x = -4; ftail.rotation.z = Math.PI / 2; fishModel.add(ftail); 
+                    mesh = fishModel; mesh.userData = { type: type, radius: 5.0, active: true }; mesh.position.y = 1.5; 
+                }
+                else if (['rabbit','deer','boar','bear','mole'].includes(type)) { mesh = createAnimal(type, x, z); return; }
 
-                if (mesh) { mesh.position.x = x; mesh.position.z = z; mesh.castShadow = true; scene.add(mesh); objects.push(mesh); collidables.push(mesh); return; }
+                if (mesh) { 
+                    mesh.position.x = x; mesh.position.z = z; mesh.castShadow = true; scene.add(mesh); objects.push(mesh); collidables.push(mesh); 
+                    freezeObj(mesh);
+                    return; 
+                }
             }
         }
 
         function generateIsland() {
             scene.background = new THREE.Color(0xbae6fd); scene.fog = new THREE.Fog(0xbae6fd, 150, 2000); 
-            const fl = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000), new THREE.MeshStandardMaterial({ color: 0x22c55e })); fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; scene.add(fl);
+            const fl = new THREE.Mesh(getGeo('floor', () => new THREE.PlaneGeometry(60000, 60000)), getMat('grass', () => new THREE.MeshStandardMaterial({ color: 0x22c55e }))); 
+            fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; scene.add(fl); freezeObj(fl);
             createNature();
-            // Border mountains
+            
             const limit = config.mapRadius;
             for(let i=0; i<360; i+=5) {
                 const rad = i * (Math.PI/180);
                 const x = Math.cos(rad) * limit;
                 const z = Math.sin(rad) * limit;
-                createMountain(x, z, 4); // Big border mountains
+                createMountain(x, z, 4);
             }
             
             for (let i = 0; i < 30; i++) { const x = (Math.random() - 0.5) * 6000; const z = (Math.random() - 0.5) * 6000; if(Math.abs(x + 1200) < 500) continue; createNPC(x, z); }
-            for(let i=0; i<800; i++) respawnObject('monster', 'island');
-            for(let i=0; i<600; i++) respawnObject('field', 'island');
-            for(let i=0; i<2000; i++) respawnObject(Math.random() > 0.92 ? 'special_fish' : 'fish', 'island');
-            for(let i=0; i<10000; i++) respawnObject('ore', 'island');
-            // Animals - Increased count for better discovery
-            for(let i=0; i<800; i++) respawnObject('rabbit', 'island');
-            for(let i=0; i<400; i++) respawnObject('deer', 'island');
-            for(let i=0; i<200; i++) respawnObject('boar', 'island');
-            for(let i=0; i<80; i++) respawnObject('bear', 'island');
+            
+            for(let i=0; i<1000; i++) respawnObject('monster', 'island'); 
+            for(let i=0; i<1000; i++) respawnObject('field', 'island');
+            for(let i=0; i<2500; i++) respawnObject(Math.random() > 0.92 ? 'special_fish' : 'fish', 'island');
+            for(let i=0; i<12000; i++) respawnObject('ore', 'island'); 
+            for(let i=0; i<1000; i++) respawnObject('rabbit', 'island');
+            for(let i=0; i<500; i++) respawnObject('deer', 'island');
+            for(let i=0; i<300; i++) respawnObject('boar', 'island');
+            for(let i=0; i<100; i++) respawnObject('bear', 'island');
         }
 
         function generateCave() {
             scene.background = new THREE.Color(0x111111); scene.fog = new THREE.Fog(0x111111, 50, 500); 
-            const fl = new THREE.Mesh(new THREE.PlaneGeometry(30000, 30000), new THREE.MeshStandardMaterial({ color: 0x222222 })); fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; scene.add(fl);
-            for(let i=0; i<1500; i++) { const x = (Math.random() - 0.5) * 20000; const z = (Math.random() - 0.5) * 20000; if(Math.abs(x) < 200 && Math.abs(z) < 200) continue; if (Math.random() > 0.8) { const cry = createCrystal(); cry.position.set(x, 0, z); const s = 1 + Math.random() * 3; cry.scale.set(s,s,s); scene.add(cry); cry.userData = { type: 'crystal', radius: 4 * s, active: false }; collidables.push(cry); } else { const wall = new THREE.Mesh(new THREE.BoxGeometry(30 + Math.random()*50, 200, 30 + Math.random()*50), new THREE.MeshStandardMaterial({ color: 0x333333 })); wall.position.set(x, 0, z); scene.add(wall); wall.userData = { type: 'wall', radius: 40, active: true }; collidables.push(wall); } }
-            for(let i=0; i<300; i++) respawnObject('monster', 'cave');
-            // Cave Animals
-            for(let i=0; i<100; i++) respawnObject('mole', 'cave');
-            for(let i=0; i<30; i++) respawnObject('boar', 'cave');
-            for(let i=0; i<15; i++) respawnObject('bear', 'cave');
-            // Cave Ores
-            for (let i = 0; i < 3500; i++) { const x = (Math.random() - 0.5) * 20000; const z = (Math.random() - 0.5) * 20000; if (Math.abs(x) < 100 && Math.abs(z) < 100) continue; const pos = new THREE.Vector3(x, 0, z); let hitWall = false; for(let c of collidables) { if(pos.distanceTo(c.position) < c.userData.radius + 10) hitWall = true; } if(hitWall) continue; let mesh; if (Math.random() > 0.8) { mesh = createCharacterModel(0xff0000, true, config.monsterScale).group; mesh.userData = { type: 'monster', radius: 12.0, active: true }; } else { const keys = ['gold', 'diamond', 'ruby', 'iron']; const o = keys[Math.floor(Math.random() * keys.length)]; mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(5.0), new THREE.MeshStandardMaterial({ color: config.oreTypes[o].color, metalness: 0.7 })); mesh.userData = { type: 'ore', ore: o, radius: 4.0, active: true }; mesh.position.y = 4.5; } if(mesh) { mesh.position.x = x; mesh.position.z = z; mesh.castShadow = true; scene.add(mesh); objects.push(mesh); collidables.push(mesh); } }
+            const fl = new THREE.Mesh(getGeo('caveFloor', () => new THREE.PlaneGeometry(30000, 30000)), getMat('caveGrass', () => new THREE.MeshStandardMaterial({ color: 0x222222 }))); 
+            fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; scene.add(fl); freezeObj(fl);
+            
+            const wallMat = getMat('wall', () => new THREE.MeshStandardMaterial({ color: 0x333333 }));
+            for(let i=0; i<2000; i++) { 
+                const x = (Math.random() - 0.5) * 20000; const z = (Math.random() - 0.5) * 20000; if(Math.abs(x) < 200 && Math.abs(z) < 200) continue; 
+                if (Math.random() > 0.8) { 
+                    const cryGeo = getGeo('crystal', () => new THREE.ConeGeometry(4, 15, 6));
+                    const cryMat = getMat('crystalM', () => new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00aaaa, emissiveIntensity: 0.5, transparent: true, opacity: 0.8 }));
+                    const cry = new THREE.Mesh(cryGeo, cryMat);
+                    cry.position.set(x, 7.5, z); const s = 1 + Math.random() * 3; cry.scale.set(s,s,s); scene.add(cry); cry.userData = { type: 'crystal', radius: 4 * s, active: false }; collidables.push(cry); freezeObj(cry);
+                } else { 
+                    const wall = createBox(30 + Math.random()*50, 200, 30 + Math.random()*50, wallMat); wall.position.set(x, 0, z); scene.add(wall); wall.userData = { type: 'wall', radius: 40, active: true }; collidables.push(wall); freezeObj(wall);
+                } 
+            }
+            
+            for(let i=0; i<800; i++) respawnObject('monster', 'cave'); 
+            for(let i=0; i<300; i++) respawnObject('mole', 'cave');
+            for(let i=0; i<100; i++) respawnObject('boar', 'cave');
+            for(let i=0; i<50; i++) respawnObject('bear', 'cave');
+            for(let i=0; i<4500; i++) respawnObject('ore', 'cave');
         }
 
         function initScene() {
@@ -964,7 +1055,7 @@
 
         window.loadMap = (mapType) => {
             objects.forEach(o => scene.remove(o)); objects = []; collidables = []; bridges = [];
-            scene.children.forEach(c => { if(c.userData.active !== undefined || (c.geometry && c.geometry.type === 'PlaneGeometry')) scene.remove(c); }); while(scene.children.length > 0){ scene.remove(scene.children[0]); }
+            scene.children.forEach(c => { if(c.userData.active !== undefined || (c.geometry && (c.geometry.type === 'PlaneGeometry' || c.geometry.type === 'BoxGeometry'))) scene.remove(c); }); while(scene.children.length > 0){ scene.remove(scene.children[0]); }
             scene.add(new THREE.AmbientLight(0xffffff, 0.6)); const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(150, 400, 150); sun.castShadow = true; scene.add(sun);
             createPlayer(); 
             if(mapType === 'cave') { 
@@ -979,7 +1070,18 @@
         };
 
         window.switchMap = () => { if(window.state.currentMap === 'island') { if(window.state.level < config.maps.cave.minLevel) { window.showToast(`等級不足！需達 Lv.${config.maps.cave.minLevel} 才能進入`); return; } window.state.currentMap = 'cave'; window.showToast("前往：幽暗地底"); } else { window.state.currentMap = 'island'; window.showToast("前往：陽光島嶼"); } window.loadMap(window.state.currentMap); window.saveProgress(); }
-        window.buyHeadlamp = () => { const item = config.specialItems.headlamp; if (window.state.inventory.headlamp > 0) return; if (window.state.money >= item.cost) { window.state.money -= item.cost; window.state.inventory.headlamp = 1; window.updateUI(); window.changeShopTab('tools'); window.saveProgress(); window.showToast("已購買頭燈！洞窟探險更安全了"); if(window.state.currentMap === 'cave' && playerLight) { playerLight.distance = 1500; playerLight.intensity = 2.5; } } else { window.showToast("金錢不足！"); } };
+        
+        window.buyHeadlamp = () => { 
+             const item = config.specialItems.headlamp; 
+             if (window.state.inventory.headlamp > 0) return; 
+             if (window.state.money >= item.cost) { 
+                 window.state.money -= item.cost; window.state.inventory.headlamp = 1; 
+                 window.updateUI(); window.changeShopTab('tools'); window.saveProgress(); 
+                 window.showToast("已購買高流明頭燈！"); 
+                 if(window.state.currentMap === 'cave') window.loadMap('cave'); // Reload lighting
+             } else { window.showToast("金錢不足！"); } 
+        };
+        
         window.buyFloodlight = () => { 
              const item = config.specialItems.floodlight; 
              if (window.state.inventory.floodlight > 0) return; 
@@ -990,6 +1092,7 @@
                  if(window.state.currentMap === 'cave') window.loadMap('cave'); // Reload lighting
              } else { window.showToast("金錢不足！"); } 
         };
+
         window.buyHuntingTool = (i) => { if (window.state.money >= config.huntingTools[i].cost && i > window.state.huntingToolIndex) { window.state.money -= config.huntingTools[i].cost; window.state.huntingToolIndex = i; window.updateUI(); window.changeShopTab('hunt'); window.saveProgress(); window.showToast("狩獵工具升級！"); } };
 
         function animate() { requestAnimationFrame(animate); const delta = clock.getDelta(); if (!window.state.isAnswering) { if (window.state.isMining) { window.state.miningTime += delta; rightArm.rotation.x = -Math.PI / 2 + Math.sin(window.state.miningTime * 18) * 2.0; if (window.state.miningTime > 0.6) { window.state.isMining = false; rightArm.rotation.x = 0; triggerChallenge(); } } else { handleMovement(); checkProximity(); } } renderer.render(scene, camera); }
@@ -1008,20 +1111,46 @@
                     return;
                 }
 
-                let onB = false; for (let b of bridges) { if (Math.abs(nextPos.x - b.x) < 425 && Math.abs(nextPos.z - b.z) < (b.depth / 2)) { onB = true; break; } }
+                let onB = false; for (let i = 0, len = bridges.length; i < len; i++) { const b = bridges[i]; if (Math.abs(nextPos.x - b.x) < 425 && Math.abs(nextPos.z - b.z) < (b.depth / 2)) { onB = true; break; } }
                 const inRiver = window.state.currentMap === 'island' && nextPos.x > config.riverRange.min && nextPos.x < config.riverRange.max && !onB;
                 if (!isColliding(nextPos)) {
                     if (inRiver) { if (window.state.inventory.boat > 0) { playerGroup.position.x = nextPos.x; playerGroup.position.z = nextPos.z; playerGroup.position.y = 0; if(boatMesh) boatMesh.visible = true; if(leftLeg) leftLeg.visible = false; if(rightLeg) rightLeg.visible = false; } else { window.showToast("水深危險！請尋找橋樑或購買渡河小船。"); } } 
                     else { playerGroup.position.x = nextPos.x; playerGroup.position.z = nextPos.z; playerGroup.position.y = onB ? 5.5 : 0; if(boatMesh) boatMesh.visible = false; if(leftLeg) leftLeg.visible = true; if(rightLeg) rightLeg.visible = true; }
                 }
-                const t = Date.now() * 0.015; if(!inRiver) { leftLeg.rotation.x = Math.sin(t) * 1.5; rightLeg.rotation.x = -Math.sin(t) * 1.5; } leftArm.rotation.x = -Math.sin(t) * 1.2; rightArm.rotation.x = Math.sin(t) * 1.2;
+                const t = Date.now() * 0.025; if(!inRiver) { leftLeg.rotation.x = Math.sin(t) * 1.5; rightLeg.rotation.x = -Math.sin(t) * 1.5; } leftArm.rotation.x = -Math.sin(t) * 1.2; rightArm.rotation.x = Math.sin(t) * 1.2;
             } else { if(leftLeg) leftLeg.rotation.x = 0; if(rightLeg) rightLeg.rotation.x = 0; leftArm.rotation.x = 0; rightArm.rotation.x = 0; }
             camera.position.copy(playerGroup.position).add(new THREE.Vector3(0, 100, 150)); camera.lookAt(playerGroup.position);
         }
 
-        function isColliding(pos) { for (let obj of collidables) { if (obj.userData.active && pos.distanceTo(obj.position) < (config.playerHitbox + obj.userData.radius)) return true; } return false; }
+        function isColliding(pos) { 
+            const px = pos.x, pz = pos.z;
+            for (let i = 0, len = collidables.length; i < len; i++) { 
+                const obj = collidables[i];
+                if (obj.userData.active) { 
+                    const dx = px - obj.position.x;
+                    const dz = pz - obj.position.z;
+                    const distSq = dx*dx + dz*dz;
+                    const rad = config.playerHitbox + obj.userData.radius;
+                    if (distSq < rad * rad) return true; 
+                } 
+            } 
+            return false; 
+        }
+
         function checkProximity() {
-            let found = false; objects.forEach(obj => { if (obj.userData.active && playerGroup.position.distanceTo(obj.position) < 28.0) { found = true; window.state.currentObject = obj; } });
+            let found = false; 
+            const px = playerGroup.position.x, pz = playerGroup.position.z;
+            for (let i = 0, len = objects.length; i < len; i++) {
+                const obj = objects[i];
+                if (obj.userData.active) {
+                    const dx = px - obj.position.x;
+                    const dz = pz - obj.position.z;
+                    if (dx*dx + dz*dz < 1225.0) { // Interaction distance up to 35
+                        found = true; window.state.currentObject = obj;
+                        break;
+                    }
+                }
+            }
             const hint = document.getElementById('interaction-hint');
             if (hint) {
                 if (found) {
@@ -1059,40 +1188,7 @@
         }
 
         window.updateDpadPosition = (isRight) => { window.state.isDpadOnRight = isRight; window.updateHandedness(); window.saveProgress(); };
-        window.startGame = async function() { const name = document.getElementById('player-name-input').value.trim(); const password = document.getElementById('player-password-input').value.trim(); const missionId = document.getElementById('login-mission-select').value; if (!name || !password) { window.showToast("請輸入完整資訊"); return; } 
-            
-            // UI Feedback
-            const btn = document.getElementById('btn-start-game');
-            const originalText = btn.innerText;
-            btn.innerText = "載入中...";
-            btn.disabled = true;
-
-            await window.loadGlobalMissions(); 
-            const success = await window.loadStudentData(name, password); 
-            
-            if (success) { 
-                window.state.activeMissionId = missionId; 
-                if (!window.globalMissions[missionId]) window.state.activeMissionId = 'mission_mul_2'; 
-                
-                // Allow UI to update before heavy processing
-                setTimeout(() => {
-                    initScene(); 
-                    document.getElementById('blocker').style.display = 'none'; 
-                    window.state.password = password; 
-                    window.saveProgress(); 
-                    const mTitle = window.globalMissions[window.state.activeMissionId].title; 
-                    window.showToast(`任務開始：${mTitle}`); 
-                    window.updateUI();
-                    
-                    // Reset button
-                    btn.innerText = originalText;
-                    btn.disabled = false;
-                }, 50);
-            } else {
-                 btn.innerText = originalText;
-                 btn.disabled = false;
-            }
-        };
+        window.startGame = async function() { const name = document.getElementById('player-name-input').value.trim(); const password = document.getElementById('player-password-input').value.trim(); const missionId = document.getElementById('login-mission-select').value; if (!name || !password) { window.showToast("請輸入完整資訊"); return; } await window.loadGlobalMissions(); const success = await window.loadStudentData(name, password); if (success) { window.state.activeMissionId = missionId; if (!window.globalMissions[missionId]) window.state.activeMissionId = 'mission_mul_2'; document.getElementById('blocker').style.display = 'none'; window.state.password = password; window.saveProgress(); const mTitle = window.globalMissions[window.state.activeMissionId].title; window.showToast(`任務開始：${mTitle}`); window.updateUI(); } };
         window.openMissionSelect = () => { window.updateMissionDropdowns(); window.toggleModal('mission-select-modal'); }
         window.goHome = function() { document.getElementById('blocker').style.display = 'flex'; document.getElementById('system-menu-modal').classList.add('hidden'); document.getElementById('modal-container').classList.add('hidden'); };
         
@@ -1166,7 +1262,8 @@
             window.state.health = Math.max(0, window.state.health - finalCost);
 
             if (bonus) { gainMoney *= 2; gainExp *= 1.5; }
-            window.state.money += Math.floor(gainMoney); window.state.exp += Math.floor(gainExp);
+            window.state.money += (Math.floor(gainMoney) || 0); 
+            window.state.exp += (Math.floor(gainExp) || 0);
             while (window.state.exp >= window.state.level * 5000) { window.state.exp -= window.state.level * 5000; window.state.level++; window.showToast(`升級了！Lv. ${window.state.level}`); }
             
             const typeToRespawn = u.type; const currentMap = window.state.currentMap;
@@ -1247,7 +1344,7 @@
         window.openChest = () => { if (window.state.inventory.chest <= 0) return; window.state.inventory.chest--; const rewards = [{icon: '💰', name: '現金', amount: 1000 + Math.floor(Math.random() * 3000)}]; window.state.money += rewards[0].amount; if(Math.random() > 0.5) { window.state.inventory.diamond += 1; rewards.push({icon: config.oreTypes.diamond.icon, name: config.oreTypes.diamond.name, amount: 1}); } else { window.state.inventory.ruby += 2; rewards.push({icon: config.oreTypes.ruby.icon, name: config.oreTypes.ruby.name, amount: 2}); } window.state.exp += 5000; rewards.push({icon: '✨', name: '大量經驗', amount: 5000}); const list = document.getElementById('reward-list'); list.innerHTML = ''; rewards.forEach(r => { list.innerHTML += `<div class="bg-slate-50 p-4 rounded-xl border flex items-center gap-3 text-slate-800"><span class="text-3xl">${r.icon}</span><div><div class="font-bold text-slate-700">${r.name}</div><div class="font-black text-blue-500">x${r.amount}</div></div></div>`; }); document.getElementById('reward-modal').classList.remove('hidden'); window.updateUI(); window.saveProgress(); };
         window.openResetConfirm = (title, desc, hideResetBtn = false) => { const tEl = document.getElementById('reset-title'); const dEl = document.getElementById('reset-desc'); const cBtn = document.getElementById('btn-cancel-reset'); const rBtn = document.getElementById('btn-confirm-reset'); tEl.innerText = title || "確定重置？"; dEl.innerHTML = desc || "所有等級、金錢、道具將會歸零！<br>體力將回滿，題庫設定會保留。"; if (hideResetBtn) { if(rBtn) rBtn.classList.add('hidden'); cBtn.innerText = "知道了"; cBtn.className = "w-full py-3 bg-blue-600 rounded-xl font-bold interactive text-white shadow-[0_4px_0_#1e3a8a] active:translate-y-1 active:shadow-none"; } else { if(rBtn) rBtn.classList.remove('hidden'); cBtn.innerText = "取消"; cBtn.className = "flex-1 py-3 bg-gray-600 rounded-xl font-bold interactive text-white"; } document.getElementById('modal-container').classList.remove('hidden'); document.getElementById('reset-confirm-modal').classList.remove('hidden'); };
         window.closeResetConfirm = () => { document.getElementById('reset-confirm-modal').classList.add('hidden'); const others = Array.from(document.querySelectorAll('.modal-mask')).filter(m => !m.classList.contains('hidden') && m.id !== 'reset-confirm-modal'); if (others.length === 0) document.getElementById('modal-container').classList.add('hidden'); };
-        window.resetGame = async () => { const name = window.state.playerName; const pass = window.state.password; const uid = window.state.userId; window.state = { userId: uid, money: 0, level: 1, exp: 0, health: 100, streak: 0, playerName: name, password: pass, inventory: { 'stone': 0, 'iron': 0, 'gold': 0, 'ruby': 0, 'diamond': 0, 'chest': 0, 'pearl': 0, 'chocolate': 0, 'meal': 0, 'energy_drink': 0, 'steak': 0, 'boat': 0, 'fish': 0, 'crab': 0, 'lobster': 0, 'shark': 0, 'headlamp': 0, 'rabbit': 0, 'deer': 0, 'boar': 0, 'bear': 0 }, toolIndex: 0, fishingToolIndex: 0, huntingToolIndex: 0, hatIndex: 0, clothesIndex: 0, ownedHats: [0], activeMissionId: 'mission_mul_2', completedQuestions: [], missionProgress: 0, autoRead: window.state.autoRead, voiceURI: window.state.voiceURI, speechRate: window.state.speechRate, isTablet: window.state.isTablet, isDpadOnRight: window.state.isDpadOnRight, activeTool: 'pickaxe', currentMap: 'island' }; await window.saveProgress(); window.loadMap('island'); window.updateUI(); window.updateToolVisuals(); window.selectCharColor(0); window.closeResetConfirm(); document.getElementById('settings-modal').classList.add('hidden'); if(document.querySelectorAll('.modal-mask:not(.hidden)').length === 0) document.getElementById('modal-container').classList.add('hidden'); window.showToast("遊戲已完全重置！"); };
+        window.resetGame = async () => { const name = window.state.playerName; const pass = window.state.password; const uid = window.state.userId; window.state = { userId: uid, money: 0, level: 1, exp: 0, health: 100, streak: 0, playerName: name, password: pass, inventory: { 'stone': 0, 'iron': 0, 'gold': 0, 'ruby': 0, 'diamond': 0, 'chest': 0, 'pearl': 0, 'chocolate': 0, 'meal': 0, 'energy_drink': 0, 'steak': 0, 'boat': 0, 'fish': 0, 'crab': 0, 'lobster': 0, 'shark': 0, 'headlamp': 0, 'rabbit': 0, 'deer': 0, 'boar': 0, 'bear': 0, 'mole': 0 }, toolIndex: 0, fishingToolIndex: 0, huntingToolIndex: 0, hatIndex: 0, clothesIndex: 0, ownedHats: [0], activeMissionId: 'mission_mul_2', completedQuestions: [], missionProgress: 0, autoRead: window.state.autoRead, voiceURI: window.state.voiceURI, speechRate: window.state.speechRate, isTablet: window.state.isTablet, isDpadOnRight: window.state.isDpadOnRight, activeTool: 'pickaxe', currentMap: 'island' }; await window.saveProgress(); window.loadMap('island'); window.updateUI(); window.updateToolVisuals(); window.selectCharColor(0); window.closeResetConfirm(); document.getElementById('settings-modal').classList.add('hidden'); if(document.querySelectorAll('.modal-mask:not(.hidden)').length === 0) document.getElementById('modal-container').classList.add('hidden'); window.showToast("遊戲已完全重置！"); };
         window.toggleModal = (id) => { const el = document.getElementById(id); const c = document.getElementById('modal-container'); if(el) { c.classList.remove('hidden'); el.classList.toggle('hidden'); if(Array.from(document.querySelectorAll('.modal-mask')).every(m => m.classList.contains('hidden'))) c.classList.add('hidden'); } if(id==='shop-modal') window.changeShopTab('recycle'); if(id==='settings-modal') window.renderTeacherMissionList(); if(id==='backpack-modal') window.updateUI(); };
         window.toggleTabletMode = () => { window.state.isTablet = !window.state.isTablet; document.body.classList.toggle('tablet-mode', window.state.isTablet); window.showToast(window.state.isTablet ? "開啟搖桿介面" : "關閉搖桿介面"); };
         window.onWindowResize = () => { if (!camera || !renderer) return; camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); };
@@ -1271,40 +1368,7 @@
         window.sellOne = (k) => { if (window.state.inventory[k] > 0) { window.state.inventory[k]--; window.state.money += config.oreTypes[k].value; window.updateUI(); window.changeShopTab('recycle'); window.saveProgress(); } };
         window.setKey = (code, active, btn) => { window.keys[code] = active; if (active) btn.classList.add('active-state'); else btn.classList.remove('active-state'); };
 
-        if(auth) { 
-            onAuthStateChanged(auth, async (user) => { 
-                if (user && window.state) { 
-                    window.state.userId = user.uid; 
-                    await loadGlobalMissions(); 
-                    initScene(); 
-                    window.updateUI(); 
-                } else if (!user) { 
-                    try { 
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) 
-                            await signInWithCustomToken(auth, __initial_auth_token); 
-                        else 
-                            throw new Error("No token"); 
-                    } catch (e) { 
-                        console.log("Custom token failed (expected if using custom firebase config), trying anonymous:", e); 
-                        try {
-                            await signInAnonymously(auth); 
-                        } catch (err) {
-                            console.warn("Auth failed:", err);
-                            // 失敗時切換到離線模式，避免卡在 Loading
-                            window.showToast("無法連接伺服器，切換至離線模式");
-                            db = null; // 強制切換為離線模式
-                            await loadGlobalMissions(); 
-                            initScene(); 
-                            window.updateUI();
-                        }
-                    } 
-                } 
-            }); 
-        } else { 
-            loadGlobalMissions(); 
-            initScene(); 
-            window.updateUI(); 
-        }
+        if(auth) { onAuthStateChanged(auth, async (user) => { if (user && window.state) { window.state.userId = user.uid; await loadGlobalMissions(); initScene(); window.updateUI(); } else if (!user) { try { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); else throw new Error("No token"); } catch (e) { console.log("Custom token failed (expected if using custom firebase config), trying anonymous:", e); await signInAnonymously(auth); } } }); } else { loadGlobalMissions(); initScene(); window.updateUI(); }
         window.addEventListener('keydown', e => window.keys[e.code] = true); window.addEventListener('keyup', e => window.keys[e.code] = false); window.addEventListener('keydown', e => { if(e.code === 'KeyK' || e.code === 'k') window.tryInteract(); }); window.addEventListener('resize', window.onWindowResize);
         window.renderCharSelector();
     </script>
